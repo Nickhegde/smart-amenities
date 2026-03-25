@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme — required by AndroidManifest android:theme reference.
+         Actual colors/typography come from the Compose SmartAmenitiesTheme. -->
+    <style name="Theme.SmartAmenities" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
