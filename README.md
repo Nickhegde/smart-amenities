@@ -20,7 +20,7 @@ An Android app that helps passengers locate and navigate to amenities (restrooms
 ### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Nickhegde/smart-amenities.git
 cd SmartAmenities
 ```
 
