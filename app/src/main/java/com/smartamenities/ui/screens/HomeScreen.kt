@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.smartamenities.data.model.User
+import com.smartamenities.ui.components.AccountIconButton
 
 private data class TerminalInfo(
     val name: String,
@@ -28,7 +30,13 @@ private val terminals = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onTerminalSelected: (String) -> Unit) {
+fun HomeScreen(
+    onTerminalSelected: (String) -> Unit,
+    currentUser: User? = null,
+    onSignOut: () -> Unit = {},
+    onNavigateToAuth: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -37,6 +45,14 @@ fun HomeScreen(onTerminalSelected: (String) -> Unit) {
                         text = "DFW Airport",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
+                    )
+                },
+                actions = {
+                    AccountIconButton(
+                        currentUser     = currentUser,
+                        onSignOut       = onSignOut,
+                        onNavigateToAuth = onNavigateToAuth,
+                        onOpenSettings  = onOpenSettings
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

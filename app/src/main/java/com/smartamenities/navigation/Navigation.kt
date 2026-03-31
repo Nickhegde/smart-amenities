@@ -7,6 +7,11 @@ package com.smartamenities.navigation
  */
 sealed class Screen(val route: String) {
 
+    // Auth flow
+    data object Auth   : Screen("auth")
+    data object Login  : Screen("login")
+    data object SignUp : Screen("signup")
+
     // Terminal selection home screen
     data object Home : Screen("home")
 
@@ -25,4 +30,7 @@ sealed class Screen(val route: String) {
 
     // Accessibility preferences form (FR 4.1, FR 4.2)
     data object Preferences : Screen("preferences")
+
+    // Interactive Terminal D floor-plan map
+    data object Map : Screen("map")
 }

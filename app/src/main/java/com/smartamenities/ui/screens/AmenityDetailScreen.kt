@@ -15,6 +15,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.smartamenities.data.model.*
 import com.smartamenities.ui.components.*
 import com.smartamenities.viewmodel.AmenityViewModel
+import com.smartamenities.ui.components.AccountIconButton
 
 /**
  * AmenityDetailScreen — FR 1.1.4
@@ -34,7 +35,11 @@ fun AmenityDetailScreen(
     amenityId: String,
     onNavigate: (Amenity) -> Unit,
     onBack: () -> Unit,
-    viewModel: AmenityViewModel = hiltViewModel()
+    viewModel: AmenityViewModel = hiltViewModel(),
+    currentUser: com.smartamenities.data.model.User? = null,
+    onSignOut: () -> Unit = {},
+    onNavigateToAuth: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     // Fetch the specific amenity from the ViewModel
     LaunchedEffect(amenityId) {
@@ -44,13 +49,16 @@ fun AmenityDetailScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val preferences by viewModel.preferences.collectAsState()
+    val preSelectedAmenity by viewModel.selectedAmenity.collectAsState()
 
-    // Find the amenity from the loaded list
+    // Find the amenity: first try the loaded list, then fall back to whatever the
+    // caller stored in the ViewModel (covers map-pin placeholders whose IDs don't
+    // appear in the repository's list).
     val amenity = when (val state = uiState) {
         is com.smartamenities.viewmodel.AmenityUiState.Success ->
             state.amenities.find { it.id == amenityId }
         else -> null
-    }
+    } ?: preSelectedAmenity?.takeIf { it.id == amenityId }
 
     Scaffold(
         topBar = {
@@ -60,6 +68,14 @@ fun AmenityDetailScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    AccountIconButton(
+                        currentUser      = currentUser,
+                        onSignOut        = onSignOut,
+                        onNavigateToAuth = onNavigateToAuth,
+                        onOpenSettings   = onOpenSettings
+                    )
                 }
             )
         }

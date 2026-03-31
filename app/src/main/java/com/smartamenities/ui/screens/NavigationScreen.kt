@@ -69,7 +69,12 @@ fun NavigationScreen(
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             when (val state = navState) {
 
-                is NavigationUiState.Idle,
+                // Idle means endNavigation() was called — compose nav will pop this screen.
+                // Show nothing rather than the spinner to avoid a flash of "calculating".
+                is NavigationUiState.Idle -> {
+                    Box(modifier = Modifier.fillMaxSize())
+                }
+
                 is NavigationUiState.Loading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {

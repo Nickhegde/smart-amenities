@@ -1,6 +1,6 @@
 # SmartAmenities
 
-An Android app that helps passengers locate and navigate to amenities (restrooms, family restrooms, lactation rooms, water fountains) inside DFW Airport terminals. Currently supports **Terminal D** with turn-by-turn, accessibility-aware navigation.
+An Android app that helps passengers locate and navigate to amenities (restrooms, family restrooms, lactation rooms, water fountains) inside DFW Airport terminals. Currently supports **Terminal D** with an interactive floor-plan map, turn-by-turn accessibility-aware navigation, and local user accounts.
 
 ---
 
@@ -92,23 +92,61 @@ Or from the terminal:
 
 ---
 
+## Screen Flow
+
+```
+AuthScreen  (first launch / logged out)
+  ├─ Create Account → SignUpScreen ──┐
+  ├─ Sign In        → LoginScreen   ─┤ auth success
+  └─ Continue as Guest ──────────────┘
+                                     ↓
+HomeScreen  (terminal selection — Terminal D active)
+  └─ Select Terminal D
+                                     ↓
+MapScreen  (Map tab + List tab)
+  └─ Tap pin or list item
+                                     ↓
+AmenityDetailScreen
+  └─ Tap Navigate
+                                     ↓
+NavigationScreen  (turn-by-turn)
+  └─ End / Done  →  back to MapScreen
+```
+
+A **Sign Out** / **Sign In** button is present in the top-right corner of every screen for quick account access.
+
+---
+
 ## Project Structure
 
 ```
 SmartAmenities/
 ├── app/src/main/java/com/smartamenities/
 │   ├── data/
-│   │   ├── model/          # Domain data classes (Amenity, Route, etc.)
-│   │   ├── local/          # MockAmenityDataSource (hardcoded Terminal D data)
-│   │   └── repository/     # AmenityRepository interface + Mock implementation
-│   ├── viewmodel/          # AmenityViewModel, NavigationViewModel
+│   │   ├── model/          # Domain data classes (Amenity, Route, User, UserPreferences, …)
+│   │   ├── local/          # MockAmenityDataSource, UserDataStore (SharedPreferences)
+│   │   └── repository/     # AmenityRepository interface + MockAmenityRepository
+│   ├── viewmodel/
+│   │   ├── AmenityViewModel.kt   # list, filtering, sorting, preferences
+│   │   ├── NavigationViewModel.kt# step progress, rerouting
+│   │   └── AuthViewModel.kt      # sign-up, login, guest auth, session restore
 │   ├── ui/
-│   │   ├── screens/        # HomeScreen, AmenityListScreen, AmenityDetailScreen,
-│   │   │                   #   NavigationScreen, PreferencesScreen
-│   │   ├── components/     # Shared composables
-│   │   └── theme/          # Material3 theming (DFW blue/orange palette)
-│   ├── navigation/         # Screen sealed class + NavHost
-│   └── di/                 # Hilt AppModule (swap mock → real backend here)
+│   │   ├── screens/
+│   │   │   ├── AuthScreen.kt           # landing (create account / sign in / guest)
+│   │   │   ├── LoginScreen.kt
+│   │   │   ├── SignUpScreen.kt         # name, email, phone, password, accessibility prefs
+│   │   │   ├── HomeScreen.kt           # terminal selector
+│   │   │   ├── MapScreen.kt            # Canvas floor plan + List tab (Terminal D)
+│   │   │   ├── AmenityDetailScreen.kt
+│   │   │   ├── NavigationScreen.kt     # turn-by-turn
+│   │   │   └── PreferencesScreen.kt    # settings & account
+│   │   ├── components/
+│   │   │   ├── AccountIconButton.kt    # sign-in/sign-out header button
+│   │   │   └── SharedComponents.kt     # cards, chips, badges
+│   │   └── theme/                      # Material3 theming (DFW blue/orange palette)
+│   ├── navigation/         # Screen sealed class with typed route builders
+│   ├── di/                 # Hilt AppModule (swap mock → real backend here)
+│   └── MainActivity.kt     # single activity, NavHost
 ├── build.gradle.kts
 ├── settings.gradle.kts
 └── local.properties        # ← machine-specific, not in git
@@ -120,8 +158,23 @@ SmartAmenities/
 
 **MVVM + Repository** — single-activity with Jetpack Compose Navigation.
 
-- The mock data source lives in `MockAmenityDataSource`. To wire a real backend, replace the binding in `di/AppModule.kt` — no other files need changing.
-- UI state is modelled as sealed classes (`Loading / Success / Empty / Error`) exposed via `StateFlow`.
+- **Data layer**: `MockAmenityDataSource` returns hardcoded Terminal D amenities with 150 ms simulated latency. `UserDataStore` persists user accounts and sessions in `SharedPreferences` (JSON via Gson, passwords SHA-256 hashed). To wire a real backend, replace the `MockAmenityRepository` binding in `di/AppModule.kt` — no other files need changing.
+- **ViewModel layer**: UI state is modelled as sealed classes (`Loading / Success / Empty / Error`) exposed via `StateFlow`. `AuthViewModel` restores sessions synchronously on startup.
+- **UI layer**: Pure Compose with Material3. `MapScreen` uses a Canvas-based floor plan with multi-floor support (Level 1 Arrivals, Level 3 Gates, Level 4 Mezzanine). Auth back-stack is fully isolated — pressing Back from Home exits the app rather than returning to login screens.
+
+---
+
+## User Data Storage
+
+All user data is stored **locally on the device** — no data is sent to any server.
+
+| What | Where |
+|------|-------|
+| Registered accounts (name, email, hashed password, phone, accessibility prefs) | `SharedPreferences` — `smartamenities_prefs.xml` |
+| Active session (current user JSON) | Same `SharedPreferences` file |
+| File location on device | `/data/data/com.smartamenities/shared_prefs/smartamenities_prefs.xml` |
+
+Passwords are stored as **SHA-256 hashes** — the plaintext is never saved.
 
 ---
 
@@ -132,6 +185,7 @@ SmartAmenities/
 | Jetpack Compose + Material3 | UI |
 | Compose Navigation | Single-activity navigation |
 | Dagger Hilt | Dependency injection |
+| Gson | JSON serialisation for local user storage |
 | Room | Local SQLite (planned for Iteration 2) |
 | Retrofit + OkHttp | Future backend calls (mocked for now) |
 | KSP | Annotation processing for Hilt & Room |
@@ -140,10 +194,11 @@ SmartAmenities/
 
 ## Current Status (Iteration 1)
 
-- All data is mocked — no real backend or database reads yet.
-- Accessibility preferences are stored in ViewModel memory only (not persisted across restarts).
+- All amenity data is mocked — no real backend or database reads yet.
+- User accounts (sign-up, login, guest) are fully functional with local SharedPreferences storage.
+- Session is persisted across app restarts; the app opens directly to the terminal selector if a session exists.
 - Only **Terminal D** is active on the home screen; other terminals show "Coming Soon".
-- Room database schema is defined but not yet used for persistence (planned Iteration 2).
+- Room database schema is defined but not yet used for preferences persistence (planned Iteration 2).
 
 ---
 
