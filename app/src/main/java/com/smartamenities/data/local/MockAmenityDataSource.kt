@@ -196,4 +196,25 @@ object MockAmenityDataSource {
             floorTransition = null
         )
     )
+
+    fun getSimulationLocation(amenity: Amenity): SimulationLocation {
+        val gateNumber = "D(\\d+)".toRegex()
+            .find(amenity.gateProximity)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+
+        if (amenity.name.contains("Upper", ignoreCase = true) ||
+            amenity.type == AmenityType.LACTATION_ROOM
+        ) {
+            return SimulationLocation.TERMINAL_D_UPPER
+        }
+
+        return when (gateNumber) {
+            null -> SimulationLocation.TERMINAL_D_ALL
+            in 5..18 -> SimulationLocation.TERMINAL_D_EAST
+            in 19..30 -> SimulationLocation.TERMINAL_D_CENTRAL
+            else -> SimulationLocation.TERMINAL_D_WEST
+        }
+    }
 }
