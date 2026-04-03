@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.smartamenities.data.model.*
 import com.smartamenities.data.repository.AmenityRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,6 +25,7 @@ import javax.inject.Inject
 class AmenityViewModel @Inject constructor(
     private val repository: AmenityRepository
 ) : ViewModel() {
+    private var amenitiesJob: Job? = null
 
     // ── User preferences (stored in memory; Room persistence comes in Iteration 2) ──
 
@@ -43,6 +45,13 @@ class AmenityViewModel @Inject constructor(
     // Selected amenity for the detail panel (FR 1.1.2)
     private val _selectedAmenity = MutableStateFlow<Amenity?>(null)
     val selectedAmenity: StateFlow<Amenity?> = _selectedAmenity.asStateFlow()
+
+    val adminState: StateFlow<AdminSimulationState> = repository.observeAdminSimulation()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = AdminSimulationState()
+        )
 
     init {
         loadAmenities()
@@ -78,10 +87,43 @@ class AmenityViewModel @Inject constructor(
         }
     }
 
+    fun updateSimulationConfig(config: SimulationConfig) {
+        viewModelScope.launch {
+            repository.updateSimulationConfig(config)
+        }
+    }
+
+    fun applySimulationPreset(preset: SimulationPreset) {
+        viewModelScope.launch {
+            repository.applySimulationPreset(preset)
+        }
+    }
+
+    fun updateAmenityOverride(
+        amenityId: String,
+        status: AmenityStatus?,
+        crowdLevel: CrowdLevel?
+    ) {
+        viewModelScope.launch {
+            repository.updateAmenityOverride(
+                amenityId = amenityId,
+                status = status,
+                crowdLevel = crowdLevel
+            )
+        }
+    }
+
+    fun clearAmenityOverride(amenityId: String) {
+        viewModelScope.launch {
+            repository.clearAmenityOverride(amenityId)
+        }
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private fun loadAmenities() {
-        viewModelScope.launch {
+        amenitiesJob?.cancel()
+        amenitiesJob = viewModelScope.launch {
             _uiState.value = AmenityUiState.Loading
 
             val flow = selectedType.value
@@ -95,6 +137,10 @@ class AmenityViewModel @Inject constructor(
                         AmenityUiState.Empty
                     } else {
                         AmenityUiState.Success(amenities)
+                    }
+
+                    _selectedAmenity.value = _selectedAmenity.value?.let { selected ->
+                        amenities.find { it.id == selected.id } ?: selected
                     }
                 }
         }

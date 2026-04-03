@@ -56,11 +56,46 @@ enum class AmenityStatus(val displayName: String) {
  * Matches the 3-tier label system in the High-Level Architecture (CrowdLevelCalculator)
  */
 enum class CrowdLevel(val displayName: String, val waitEstimateMinutes: Int) {
+    EMPTY("Empty", 0),
     SHORT("Short Wait", 0),
     MEDIUM("Medium Wait", 5),
     LONG("Long Wait", 10),
     UNKNOWN("Unknown", 0)
 }
+
+enum class SimulationLocation(val displayName: String) {
+    TERMINAL_D_ALL("Terminal D - All Zones"),
+    TERMINAL_D_EAST("Terminal D - East Zone"),
+    TERMINAL_D_CENTRAL("Terminal D - Central Zone"),
+    TERMINAL_D_WEST("Terminal D - West Zone"),
+    TERMINAL_D_UPPER("Terminal D - Upper Level")
+}
+
+enum class SimulationPreset(val displayName: String) {
+    HIGH_TRAFFIC("High Traffic"),
+    LOW_TRAFFIC("Low Traffic"),
+    PEAK_HOURS("Peak Hours")
+}
+
+data class SimulationConfig(
+    val selectedLocation: SimulationLocation = SimulationLocation.TERMINAL_D_ALL,
+    val gateCount: Int = 18,
+    val crowdLevel: Int = 2,
+    val averageUsageTimeMinutes: Int = 6,
+    val isSystemOpen: Boolean = true,
+    val isSimulationModeEnabled: Boolean = false
+)
+
+data class AmenitySimulationOverride(
+    val status: AmenityStatus? = null,
+    val crowdLevel: CrowdLevel? = null
+)
+
+data class AdminSimulationState(
+    val config: SimulationConfig = SimulationConfig(),
+    val amenities: List<Amenity> = emptyList(),
+    val overrides: Map<String, AmenitySimulationOverride> = emptyMap()
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Navigation models

@@ -673,6 +673,7 @@ private fun DrawScope.drawAmenityPin(
         AmenityStatus.UNKNOWN        -> Color(0xFF757575)
     }
     val crowdColor = when (amenity.crowdLevel) {
+        CrowdLevel.EMPTY   -> Color(0xFF1565C0)
         CrowdLevel.SHORT   -> Color(0xFF2E7D32)
         CrowdLevel.MEDIUM  -> Color(0xFFF9A825)
         CrowdLevel.LONG    -> Color(0xFFC62828)
@@ -757,6 +758,7 @@ private fun PinInfoCard(
         AmenityStatus.UNKNOWN        -> StatusUnknown
     }
     val crowdColor = when (a.crowdLevel) {
+        CrowdLevel.EMPTY   -> Color(0xFF1565C0)
         CrowdLevel.SHORT   -> CrowdShort
         CrowdLevel.MEDIUM  -> CrowdMedium
         CrowdLevel.LONG    -> CrowdLong
@@ -811,10 +813,9 @@ private fun PinInfoCard(
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick  = onNavigate,
-                modifier = Modifier.fillMaxWidth(),
-                enabled  = a.status != AmenityStatus.CLOSED
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Navigate")
+                Text("View details")
             }
         }
     }

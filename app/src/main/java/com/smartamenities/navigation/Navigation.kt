@@ -33,4 +33,7 @@ sealed class Screen(val route: String) {
 
     // Interactive Terminal D floor-plan map
     data object Map : Screen("map")
+
+    // Hidden admin simulator and control panel
+    data object AdminSimulator : Screen("admin_simulator")
 }

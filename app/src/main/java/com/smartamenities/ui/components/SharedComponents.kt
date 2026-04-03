@@ -55,6 +55,7 @@ fun AmenityStatusChip(status: AmenityStatus) {
 @Composable
 fun CrowdLevelChip(crowdLevel: CrowdLevel) {
     val (color, label) = when (crowdLevel) {
+        CrowdLevel.EMPTY   -> CrowdShort to "Empty"
         CrowdLevel.SHORT   -> CrowdShort to "Short Wait"
         CrowdLevel.MEDIUM  -> CrowdMedium to "Medium Wait"
         CrowdLevel.LONG    -> CrowdLong to "Long Wait"
