@@ -134,10 +134,18 @@ fun AppNavHost() {
                 onTerminalSelected = { terminal ->
                     if (terminal == "D") navController.navigate(Screen.Map.route)
                 },
+                onAdminAuthenticated = { navController.navigate(Screen.AdminSimulator.route) },
                 currentUser      = currentUser,
                 onSignOut        = { onSignOut() },
                 onNavigateToAuth = { navController.navigate(Screen.Auth.route) },
                 onOpenSettings   = { navController.navigate(Screen.Preferences.route) }
+            )
+        }
+
+        composable(Screen.AdminSimulator.route) {
+            AdminSimulatorScreen(
+                viewModel = amenityViewModel,
+                onBack = { navController.popBackStack() }
             )
         }
 
