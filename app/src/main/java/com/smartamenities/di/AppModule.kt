@@ -2,8 +2,11 @@ package com.smartamenities.di
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.room.Room
+import com.smartamenities.data.local.db.AmenityDao
+import com.smartamenities.data.local.db.AppDatabase
 import com.smartamenities.data.repository.AmenityRepository
-import com.smartamenities.data.repository.MockAmenityRepository
+import com.smartamenities.data.repository.RoomAmenityRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -12,13 +15,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-/**
- * Hilt DI module — provides/binds all application-level dependencies.
- *
- * TO SWITCH TO REAL BACKEND:
- *   Change `MockAmenityRepository` to `RemoteAmenityRepository`.
- *   That's the only line you'll need to change.
- */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AppModule {
@@ -26,11 +22,22 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindAmenityRepository(
-        impl: MockAmenityRepository
+        impl: RoomAmenityRepository
     ): AmenityRepository
 
     companion object {
-        /** SharedPreferences used by UserDataStore for local auth/session storage. */
+
+        @Provides
+        @Singleton
+        fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
+            Room.databaseBuilder(context, AppDatabase::class.java, "smart_amenities.db")
+                .fallbackToDestructiveMigration()
+                .build()
+
+        @Provides
+        @Singleton
+        fun provideAmenityDao(db: AppDatabase): AmenityDao = db.amenityDao()
+
         @Provides
         @Singleton
         fun provideSharedPreferences(

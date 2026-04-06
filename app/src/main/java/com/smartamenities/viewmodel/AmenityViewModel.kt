@@ -6,7 +6,13 @@ import com.smartamenities.data.model.*
 import com.smartamenities.data.repository.AmenityRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -126,17 +132,18 @@ class AmenityViewModel @Inject constructor(
         amenitiesJob = viewModelScope.launch {
             _uiState.value = AmenityUiState.Loading
 
-            val flow = selectedType.value
+            val amenitiesFlow = selectedType.value
                 ?.let { repository.getAmenitiesByType(it, preferences.value) }
                 ?: repository.getAmenities(preferences.value)
 
-            flow
+            amenitiesFlow
+                .combine(repository.observeDataFreshness()) { amenities, isStale -> amenities to isStale }
                 .catch { e -> _uiState.value = AmenityUiState.Error(e.message ?: "Unknown error") }
-                .collect { amenities ->
+                .collect { (amenities, isStale) ->
                     _uiState.value = if (amenities.isEmpty()) {
                         AmenityUiState.Empty
                     } else {
-                        AmenityUiState.Success(amenities)
+                        AmenityUiState.Success(amenities, isStale)
                     }
 
                     _selectedAmenity.value = _selectedAmenity.value?.let { selected ->
@@ -152,6 +159,6 @@ class AmenityViewModel @Inject constructor(
 sealed class AmenityUiState {
     data object Loading : AmenityUiState()
     data object Empty : AmenityUiState()
-    data class Success(val amenities: List<Amenity>) : AmenityUiState()
+    data class Success(val amenities: List<Amenity>, val isStale: Boolean = false) : AmenityUiState()
     data class Error(val message: String) : AmenityUiState()
 }

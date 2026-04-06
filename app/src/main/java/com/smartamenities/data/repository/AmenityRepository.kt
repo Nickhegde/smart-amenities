@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
@@ -66,6 +67,12 @@ interface AmenityRepository {
 
     /** Removes any admin override for the selected amenity. */
     suspend fun clearAmenityOverride(amenityId: String)
+
+    /**
+     * Emits `true` when cached data is older than 15 minutes and no fresh
+     * network data has been received — triggers the stale-data warning in the UI.
+     */
+    fun observeDataFreshness(): Flow<Boolean>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +201,8 @@ class MockAmenityRepository @Inject constructor() : AmenityRepository {
     override suspend fun clearAmenityOverride(amenityId: String) {
         amenityOverrides.update { it - amenityId }
     }
+
+    override fun observeDataFreshness(): Flow<Boolean> = flowOf(false)
 
     private fun matchesPreferences(amenity: Amenity, prefs: UserPreferences): Boolean {
         if (prefs.requiresWheelchairAccess && !amenity.isWheelchairAccessible) return false
