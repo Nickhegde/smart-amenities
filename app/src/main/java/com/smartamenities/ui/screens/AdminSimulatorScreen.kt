@@ -16,8 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.LockReset
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -37,19 +39,19 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.smartamenities.data.graph.TerminalDGraph
 import com.smartamenities.data.local.MockAmenityDataSource
 import com.smartamenities.data.model.AdminSimulationState
 import com.smartamenities.data.model.Amenity
@@ -68,20 +70,17 @@ fun AdminSimulatorScreen(
     onBack: () -> Unit
 ) {
     val adminState by viewModel.adminState.collectAsState()
-    var gateCountInput by remember { mutableStateOf(adminState.config.gateCount.toString()) }
+    val currentUserNode by viewModel.userNode.collectAsState()
     var averageUsageInput by remember { mutableStateOf(adminState.config.averageUsageTimeMinutes.toString()) }
     var draftLocation by remember { mutableStateOf(adminState.config.selectedLocation) }
     var draftCrowd by remember { mutableStateOf(adminState.config.crowdLevel.toFloat()) }
     var systemOpen by remember { mutableStateOf(adminState.config.isSystemOpen) }
-    var simulationEnabled by remember { mutableStateOf(adminState.config.isSimulationModeEnabled) }
 
     LaunchedEffect(adminState.config) {
-        gateCountInput = adminState.config.gateCount.toString()
         averageUsageInput = adminState.config.averageUsageTimeMinutes.toString()
         draftLocation = adminState.config.selectedLocation
         draftCrowd = adminState.config.crowdLevel.toFloat()
         systemOpen = adminState.config.isSystemOpen
-        simulationEnabled = adminState.config.isSimulationModeEnabled
     }
 
     val visibleAmenities = remember(adminState) {
@@ -112,7 +111,7 @@ fun AdminSimulatorScreen(
         ) {
             item {
                 Text(
-                    text = "Adjust live Terminal D conditions, load scenarios, and override individual restroom states.",
+                    text = "Set zone-level crowd and usage conditions, or override individual amenity states. Backend API support for zone controls coming soon.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -120,6 +119,13 @@ fun AdminSimulatorScreen(
 
             item {
                 AdminSummaryCard(adminState = adminState)
+            }
+
+            item {
+                UserLocationCard(
+                    currentNode = currentUserNode,
+                    onNodeSelected = { viewModel.updateUserNode(it) }
+                )
             }
 
             item {
@@ -131,9 +137,14 @@ fun AdminSimulatorScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
-                            text = "Simulation Controls",
+                            text = "Zone Controls",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Controls apply to all amenities in the selected zone. Backend API wiring pending.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         LocationDropdown(
@@ -141,19 +152,15 @@ fun AdminSimulatorScreen(
                             onLocationSelected = { draftLocation = it }
                         )
 
-                        OutlinedTextField(
-                            value = gateCountInput,
-                            onValueChange = { gateCountInput = it.filter(Char::isDigit) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Gate count") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true
-                        )
-
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
                                 text = "Crowd level: ${crowdLabel(draftCrowd.toInt())}",
                                 style = MaterialTheme.typography.labelLarge
+                            )
+                            Text(
+                                text = "Sets the crowd level for all amenities in the selected zone",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Slider(
                                 value = draftCrowd,
@@ -167,21 +174,16 @@ fun AdminSimulatorScreen(
                             value = averageUsageInput,
                             onValueChange = { averageUsageInput = it.filter(Char::isDigit) },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Average usage time (minutes)") },
+                            label = { Text("Avg. usage time per person (minutes)") },
+                            supportingText = { Text("Applied to all amenities in the selected zone") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true
                         )
 
                         ToggleRow(
-                            label = if (systemOpen) "System open" else "System closed",
+                            label = if (systemOpen) "Zone open" else "Zone closed (all amenities closed)",
                             checked = systemOpen,
                             onCheckedChange = { systemOpen = it }
-                        )
-
-                        ToggleRow(
-                            label = if (simulationEnabled) "Simulation mode enabled" else "Simulation mode disabled",
-                            checked = simulationEnabled,
-                            onCheckedChange = { simulationEnabled = it }
                         )
 
                         Button(
@@ -189,12 +191,12 @@ fun AdminSimulatorScreen(
                                 viewModel.updateSimulationConfig(
                                     SimulationConfig(
                                         selectedLocation = draftLocation,
-                                        gateCount = gateCountInput.toIntOrNull() ?: adminState.config.gateCount,
+                                        gateCount = adminState.config.gateCount,
                                         crowdLevel = draftCrowd.toInt(),
                                         averageUsageTimeMinutes = averageUsageInput.toIntOrNull()
                                             ?: adminState.config.averageUsageTimeMinutes,
                                         isSystemOpen = systemOpen,
-                                        isSimulationModeEnabled = simulationEnabled
+                                        isSimulationModeEnabled = true
                                     )
                                 )
                             },
@@ -202,7 +204,7 @@ fun AdminSimulatorScreen(
                         ) {
                             Icon(Icons.Default.Save, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Apply controls")
+                            Text("Apply to zone")
                         }
                     }
                 }
@@ -221,12 +223,52 @@ fun AdminSimulatorScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
+
+                        var selectedPreset by remember { mutableStateOf<SimulationPreset?>(null) }
+
                         SimulationPreset.entries.forEach { preset ->
-                            OutlinedButton(
-                                onClick = { viewModel.applySimulationPreset(preset) },
+                            val isSelected = selectedPreset == preset
+                            if (isSelected) {
+                                Button(
+                                    onClick = { selectedPreset = preset },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(preset.displayName)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { selectedPreset = preset },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(preset.displayName)
+                                }
+                            }
+                        }
+
+                        if (selectedPreset != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = "\"${selectedPreset!!.displayName}\" selected — tap Apply to activate",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    viewModel.applySimulationPreset(selectedPreset!!)
+                                    selectedPreset = null
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(preset.displayName)
+                                Icon(Icons.Default.Save, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Apply preset")
                             }
                         }
                     }
@@ -235,7 +277,7 @@ fun AdminSimulatorScreen(
 
             item {
                 Text(
-                    text = "Restroom Overrides",
+                    text = "Amenity Overrides",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -360,6 +402,12 @@ private fun AmenityOverrideCard(
     var statusExpanded by remember { mutableStateOf(false) }
     var crowdExpanded by remember { mutableStateOf(false) }
 
+    // Draft state — selections are staged here until admin taps Save
+    var draftStatus by remember(amenity.status) { mutableStateOf(amenity.status) }
+    var draftCrowd by remember(amenity.crowdLevel) { mutableStateOf(amenity.crowdLevel) }
+
+    val hasPendingChanges = draftStatus != amenity.status || draftCrowd != amenity.crowdLevel
+
     Card {
         Column(
             modifier = Modifier
@@ -378,12 +426,13 @@ private fun AmenityOverrideCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            // Status dropdown — stages selection in draftStatus, does not save yet
             ExposedDropdownMenuBox(
                 expanded = statusExpanded,
                 onExpandedChange = { statusExpanded = it }
             ) {
                 OutlinedTextField(
-                    value = amenity.status.displayName,
+                    value = draftStatus.displayName,
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Status") },
@@ -397,7 +446,7 @@ private fun AmenityOverrideCard(
                         DropdownMenuItem(
                             text = { Text(status.displayName) },
                             onClick = {
-                                onUpdate(status, null)
+                                draftStatus = status
                                 statusExpanded = false
                             }
                         )
@@ -405,15 +454,16 @@ private fun AmenityOverrideCard(
                 }
             }
 
+            // Crowd dropdown — stages selection in draftCrowd, does not save yet
             ExposedDropdownMenuBox(
                 expanded = crowdExpanded,
                 onExpandedChange = { crowdExpanded = it }
             ) {
                 OutlinedTextField(
-                    value = amenity.crowdLevel.displayName,
+                    value = draftCrowd.displayName,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Crowd") },
+                    label = { Text("Crowd level") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = crowdExpanded) },
                     modifier = Modifier
                         .menuAnchor()
@@ -425,7 +475,7 @@ private fun AmenityOverrideCard(
                             DropdownMenuItem(
                                 text = { Text(crowdLevel.displayName) },
                                 onClick = {
-                                    onUpdate(null, crowdLevel)
+                                    draftCrowd = crowdLevel
                                     crowdExpanded = false
                                 }
                             )
@@ -433,21 +483,50 @@ private fun AmenityOverrideCard(
                 }
             }
 
+            if (hasPendingChanges) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Text(
+                        text = "Unsaved changes — tap Save to apply",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
             HorizontalDivider()
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (override == null) "Using global simulation values" else "Custom override active",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TextButton(onClick = onReset) {
-                    Icon(Icons.Default.LockReset, contentDescription = null)
+                // Save — commits draft to backend (currently wired to mock; backend API next)
+                Button(
+                    onClick = { onUpdate(draftStatus, draftCrowd) },
+                    enabled = hasPendingChanges,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(modifier = Modifier.width(6.dp))
+                    Text("Save")
+                }
+
+                // Reset — reverts drafts and clears any active override
+                TextButton(
+                    onClick = {
+                        draftStatus = amenity.status
+                        draftCrowd = amenity.crowdLevel
+                        onReset()
+                    }
+                ) {
+                    Icon(Icons.Default.LockReset, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Reset")
                 }
             }
@@ -460,4 +539,129 @@ private fun crowdLabel(level: Int): String = when (level.coerceIn(0, 3)) {
     1 -> "Light"
     2 -> "Moderate"
     else -> "Heavy"
+}
+
+// ── User location nodes available for selection (gates + corridor + skylink) ────
+// Amenity leaf nodes (REST_*, FAM_*, LAC_*) are excluded — users stand at gates/corridors.
+private val USER_LOCATION_NODES: List<String> by lazy {
+    TerminalDGraph.nodes
+        .map { it.id }
+        .filter { id ->
+            !id.startsWith("REST_") && !id.startsWith("FAM_") && !id.startsWith("LAC_")
+        }
+        .sorted()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UserLocationCard(
+    currentNode: String,
+    onNodeSelected: (String) -> Unit
+) {
+    // Draft — staged locally until admin taps Save
+    var draftNode by remember(currentNode) { mutableStateOf(currentNode) }
+    val hasPendingChange = draftNode != currentNode
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "Simulated User Location",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Sets the starting node for route recommendations",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            NodeDropdown(
+                selectedNode = draftNode,
+                nodes = USER_LOCATION_NODES,
+                onNodeSelected = { draftNode = it }
+            )
+
+            if (hasPendingChange) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Text(
+                        text = "Location changed to $draftNode — tap Save to apply",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            Button(
+                onClick = { onNodeSelected(draftNode) },
+                enabled = hasPendingChange,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save location")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NodeDropdown(
+    selectedNode: String,
+    nodes: List<String>,
+    onNodeSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        OutlinedTextField(
+            value = selectedNode,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Starting node") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            nodes.forEach { node ->
+                DropdownMenuItem(
+                    text = { Text(node) },
+                    onClick = {
+                        onNodeSelected(node)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
 }

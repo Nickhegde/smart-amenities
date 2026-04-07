@@ -64,11 +64,10 @@ enum class CrowdLevel(val displayName: String, val waitEstimateMinutes: Int) {
 }
 
 enum class SimulationLocation(val displayName: String) {
-    TERMINAL_D_ALL("Terminal D - All Zones"),
-    TERMINAL_D_EAST("Terminal D - East Zone"),
-    TERMINAL_D_CENTRAL("Terminal D - Central Zone"),
-    TERMINAL_D_WEST("Terminal D - West Zone"),
-    TERMINAL_D_UPPER("Terminal D - Upper Level")
+    TERMINAL_D_ALL("All Zones"),
+    TERMINAL_D_EAST("East Zone  (Gates D5 – D18)"),
+    TERMINAL_D_CENTRAL("Central Zone  (Gates D19 – D30)"),
+    TERMINAL_D_WEST("West Zone  (Gates D31 – D40)")
 }
 
 enum class SimulationPreset(val displayName: String) {

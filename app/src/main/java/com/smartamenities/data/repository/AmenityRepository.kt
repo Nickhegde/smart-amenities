@@ -66,6 +66,13 @@ interface AmenityRepository {
 
     /** Removes any admin override for the selected amenity. */
     suspend fun clearAmenityOverride(amenityId: String)
+
+    /**
+     * Updates the user's current location node (e.g. "COR_C", "D17").
+     * Clears cached recommendations so the next fetch uses the new origin.
+     * Default no-op — only RemoteAmenityRepository overrides this.
+     */
+    fun setUserNode(node: String) {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,7 +101,10 @@ class MockAmenityRepository @Inject constructor() : AmenityRepository {
         simulatedAmenities.map { amenities ->
             amenities
                 .filter { amenity -> matchesPreferences(amenity, preferences) }
-                .sortedBy { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes }
+                .sortedWith(compareBy(
+                    { if (it.status == AmenityStatus.OPEN) 0 else 1 },
+                    { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes }
+                ))
         }
 
     override fun getAmenitiesByType(
@@ -104,7 +114,10 @@ class MockAmenityRepository @Inject constructor() : AmenityRepository {
         amenities
             .filter { it.type == type }
             .filter { amenity -> matchesPreferences(amenity, preferences) }
-            .sortedBy { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes }
+            .sortedWith(compareBy(
+                { if (it.status == AmenityStatus.OPEN) 0 else 1 },
+                { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes }
+            ))
     }
 
     override suspend fun getAmenityById(id: String): Amenity? {
@@ -199,6 +212,7 @@ class MockAmenityRepository @Inject constructor() : AmenityRepository {
         if (prefs.requiresWheelchairAccess && !amenity.isWheelchairAccessible) return false
         if (prefs.requiresStepFreeRoute && !amenity.isStepFreeRoute) return false
         if (prefs.preferFamilyRestroom && amenity.type == AmenityType.RESTROOM) return false
+        if (prefs.preferGenderNeutral && amenity.type != AmenityType.GENDER_NEUTRAL_RESTROOM) return false
         return true
     }
 

@@ -53,6 +53,10 @@ class AmenityViewModel @Inject constructor(
             initialValue = AdminSimulationState()
         )
 
+    // Current user location node — used by admin to simulate different starting positions.
+    private val _userNode = MutableStateFlow("COR_C")
+    val userNode: StateFlow<String> = _userNode.asStateFlow()
+
     init {
         loadAmenities()
     }
@@ -117,6 +121,17 @@ class AmenityViewModel @Inject constructor(
         viewModelScope.launch {
             repository.clearAmenityOverride(amenityId)
         }
+    }
+
+    /**
+     * Updates the simulated user location. Clears recommendation caches in the repository
+     * and triggers a fresh amenity load so rankings reflect the new starting point.
+     */
+    fun updateUserNode(node: String) {
+        if (node == _userNode.value) return
+        _userNode.value = node
+        repository.setUserNode(node)
+        loadAmenities()
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
