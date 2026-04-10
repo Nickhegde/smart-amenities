@@ -110,7 +110,8 @@ data class Route(
     val totalWalkMinutes: Int,
     val totalWaitMinutes: Int,              // Crowd wait added on top of walk time
     val isStepFreeRoute: Boolean,
-    val computedAtTimestamp: Long           // Used to detect stale cached routes
+    val computedAtTimestamp: Long,          // Used to detect stale cached routes
+    val routeNodeIds: List<String> = emptyList() // Graph node IDs for map path rendering
 )
 
 /**

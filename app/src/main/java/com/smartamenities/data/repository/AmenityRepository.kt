@@ -135,7 +135,8 @@ class MockAmenityRepository @Inject constructor() : AmenityRepository {
             totalWalkMinutes = activeAmenity.estimatedWalkMinutes,
             totalWaitMinutes = activeAmenity.crowdLevel.waitEstimateMinutes,
             isStepFreeRoute = activeAmenity.isStepFreeRoute,
-            computedAtTimestamp = System.currentTimeMillis()
+            computedAtTimestamp = System.currentTimeMillis(),
+            routeNodeIds = MockAmenityDataSource.getMockRouteNodeIds(activeAmenity.id)
         )
     }
 

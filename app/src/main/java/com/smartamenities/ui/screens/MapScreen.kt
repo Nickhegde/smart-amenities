@@ -508,18 +508,17 @@ private fun TerminalDFloorPlan(
     val showYouAreHere = selectedFloor == TerminalFloor.ARRIVALS
 
     val mapWidth  = 920.dp
-    val mapHeight = 360.dp
     val scrollState = rememberScrollState()
 
     Box(
         modifier = modifier
-            .background(Color(0xFFF0F4FF))
+            .background(Color(0xFFEAEAE6))
             .horizontalScroll(scrollState)
     ) {
         Canvas(
             modifier = Modifier
                 .width(mapWidth)
-                .height(mapHeight)
+                .fillMaxHeight()
                 .pointerInput(pins) {
                     detectTapGestures { offset ->
                         val w  = size.width.toFloat()
@@ -555,13 +554,13 @@ private fun TerminalDFloorPlan(
             val corrMidY  = (topArmB + botArmT) / 2f
 
             // ── Background — outside terminal ─────────────────────────────────
-            drawRect(Color(0xFFE8E8E0), topLeft = Offset(0f, 0f), size = Size(w, h))
+            drawRect(Color(0xFFEAEAE6), topLeft = Offset(0f, 0f), size = Size(w, h))
 
             // Subtle taxiway curves at bottom of canvas for airport context
             drawTaxiwayLines(w, h)
 
             // ── Terminal floor fill (3 rects form the U / horseshoe shape) ────
-            val floorColor = Color(0xFFF5F5F0)
+            val floorColor = Color(0xFFF9F9F6)
             // Top concourse arm
             drawRect(floorColor, topLeft = Offset(bL, topArmT), size = Size(bW, topArmB - topArmT))
             // Bottom concourse arm
@@ -570,10 +569,16 @@ private fun TerminalDFloorPlan(
             drawRect(floorColor, topLeft = Offset(eastX, topArmB),
                 size = Size(bR - eastX, botArmT - topArmB))
 
-            // ── Corridor (white walkway between the two arms) ─────────────────
-            drawRect(Color(0xFFFFFFFF),
+            // ── Corridor (blue-tinted walkway between the two arms) ───────────
+            drawRect(Color(0xFFEFF3FB),
                 topLeft = Offset(bL, topArmB),
                 size    = Size(eastX - bL, botArmT - topArmB))
+
+            // ── Walking lane center lines (dashed, subtle) ────────────────────
+            val topArmMidY = (topArmT + topArmB) / 2f
+            val botArmMidY = (botArmT + botArmB) / 2f
+            drawLaneLine(bL, topArmMidY, eastX, topArmMidY)
+            drawLaneLine(bL, botArmMidY, eastX, botArmMidY)
 
             // ── Terminal U-shape outline ──────────────────────────────────────
             val uPath = Path().apply {
@@ -587,7 +592,7 @@ private fun TerminalDFloorPlan(
                 lineTo(bL, topArmB)
                 close()
             }
-            drawPath(uPath, Color(0xFF9E9E9E), style = Stroke(width = 3f))
+            drawPath(uPath, Color(0xFF8A8A88), style = Stroke(width = 4f))
 
             // ── Skylink 1 zone (D11–D20, top arm) ────────────────────────────
             val sl1X1   = bL + (11 - 5).toFloat() / 17f * bW
@@ -608,26 +613,30 @@ private fun TerminalDFloorPlan(
             // ── Top gate stubs (D5–D22, protrude north from top arm) ──────────
             for (n in 5..22) {
                 val gx = bL + (n - 5).toFloat() / 17f * bW
-                drawRect(Color(0xFFEEEEEE),
-                    topLeft = Offset(gx - gHalfW, topStubTop),
-                    size    = Size(gHalfW * 2f, gStubH))
-                drawRect(Color(0xFF9E9E9E),
-                    topLeft = Offset(gx - gHalfW, topStubTop),
-                    size    = Size(gHalfW * 2f, gStubH),
-                    style   = Stroke(1.5f))
+                drawRoundRect(Color(0xFFECECEA),
+                    topLeft     = Offset(gx - gHalfW, topStubTop),
+                    size        = Size(gHalfW * 2f, gStubH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f))
+                drawRoundRect(Color(0xFFA8A8A4),
+                    topLeft     = Offset(gx - gHalfW, topStubTop),
+                    size        = Size(gHalfW * 2f, gStubH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f),
+                    style        = Stroke(1.5f))
                 drawGateLabelInStub("D$n", gx, topStubTop + gStubH * 0.55f, gateLabelPx)
             }
 
             // ── Bottom gate stubs (D23–D40, protrude south from bottom arm) ───
             for (n in 23..40) {
                 val gx = bL + (1f - (n - 23).toFloat() / 17f) * bW
-                drawRect(Color(0xFFEEEEEE),
-                    topLeft = Offset(gx - gHalfW, botArmB),
-                    size    = Size(gHalfW * 2f, gStubH))
-                drawRect(Color(0xFF9E9E9E),
-                    topLeft = Offset(gx - gHalfW, botArmB),
-                    size    = Size(gHalfW * 2f, gStubH),
-                    style   = Stroke(1.5f))
+                drawRoundRect(Color(0xFFECECEA),
+                    topLeft     = Offset(gx - gHalfW, botArmB),
+                    size        = Size(gHalfW * 2f, gStubH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f))
+                drawRoundRect(Color(0xFFA8A8A4),
+                    topLeft     = Offset(gx - gHalfW, botArmB),
+                    size        = Size(gHalfW * 2f, gStubH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f),
+                    style        = Stroke(1.5f))
                 drawGateLabelInStub("D$n", gx, botArmB + gStubH * 0.55f, gateLabelPx)
             }
 
@@ -786,6 +795,22 @@ private fun DrawScope.drawAmenityPin(
             isFakeBoldText = true; isAntiAlias = true
         }
         canvas.nativeCanvas.drawText(label, px, py + textSizePx * 0.38f, paint)
+    }
+}
+
+// ── Walking lane line (dashed centerline in each concourse arm) ──────────
+
+private fun DrawScope.drawLaneLine(x1: Float, y1: Float, x2: Float, y2: Float) {
+    drawIntoCanvas { canvas ->
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(55, 100, 130, 200)
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 2f
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(18f, 12f), 0f)
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            isAntiAlias = true
+        }
+        canvas.nativeCanvas.drawLine(x1, y1, x2, y2, paint)
     }
 }
 

@@ -16,14 +16,22 @@ import com.smartamenities.data.model.DirectionIcon
 import com.smartamenities.data.model.NavigationStep
 import com.smartamenities.data.model.Route
 import com.smartamenities.data.model.SimulationConfig
+import com.smartamenities.data.model.SimulationLocation
 import com.smartamenities.data.model.SimulationPreset
 import com.smartamenities.data.model.UserPreferences
 import com.smartamenities.data.remote.ApiService
 import com.smartamenities.data.remote.RouteOptionDto
 import com.smartamenities.data.remote.RouteRecommendRequestDto
+import com.smartamenities.data.remote.AmenityOverrideRequestDto
+import com.smartamenities.data.remote.ScenarioApplyRequestDto
+import com.smartamenities.data.remote.ZoneControlRequestDto
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.flowOf
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,6 +61,9 @@ class RemoteAmenityRepository @Inject constructor(
     // In-memory list of the last successfully fetched amenities, keyed by AmenityType name.
     // Used to re-filter without an API call when only accessibility prefs change.
     private val inMemoryAmenities = ConcurrentHashMap<String, List<Amenity>>()
+
+    // Emit Unit here after any admin write to trigger a re-fetch in observeAdminSimulation().
+    private val adminRefreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     // Base amenity data from mock — provides static fields (name, floor, coordinates, etc.)
     // that the backend route endpoint doesn't return.
@@ -129,7 +140,8 @@ class RemoteAmenityRepository @Inject constructor(
                 totalWalkMinutes = (cached.walkSeconds / 60).coerceAtLeast(1),
                 totalWaitMinutes = cached.waitSeconds / 60,
                 isStepFreeRoute = amenity.isStepFreeRoute,
-                computedAtTimestamp = System.currentTimeMillis()
+                computedAtTimestamp = System.currentTimeMillis(),
+                routeNodeIds = cached.path
             )
         } else {
             // Cache miss — amenity list wasn't loaded yet, fetch on demand.
@@ -145,7 +157,8 @@ class RemoteAmenityRepository @Inject constructor(
                         totalWalkMinutes = (freshCached.walkSeconds / 60).coerceAtLeast(1),
                         totalWaitMinutes = freshCached.waitSeconds / 60,
                         isStepFreeRoute = (matchingAmenity ?: amenity).isStepFreeRoute,
-                        computedAtTimestamp = System.currentTimeMillis()
+                        computedAtTimestamp = System.currentTimeMillis(),
+                        routeNodeIds = freshCached.path
                     )
                 } else {
                     mock.getRoute(amenity, preferences)
@@ -157,30 +170,113 @@ class RemoteAmenityRepository @Inject constructor(
         }
     }
 
-    // ── Delegated to mock (admin simulation stays local) ────────────────────
+    // ── Non-admin pass-throughs ──────────────────────────────────────────────
 
     override suspend fun getAmenityById(id: String): Amenity? = mock.getAmenityById(id)
 
     override suspend fun reportAmenityStatus(amenityId: String, status: AmenityStatus) =
         mock.reportAmenityStatus(amenityId, status)
 
+    // ── Admin — reads ────────────────────────────────────────────────────────
+
+    /**
+     * Fetches all amenities from the admin endpoint and re-emits whenever an
+     * admin write operation completes (via adminRefreshTrigger).
+     * Falls back to the mock if the backend is unreachable.
+     */
     override fun observeAdminSimulation(): Flow<AdminSimulationState> =
-        mock.observeAdminSimulation()
+        merge(flowOf(Unit), adminRefreshTrigger).map {
+            try {
+                val dtos = apiService.getAdminAmenities()
+                val amenities = dtos.map { it.toDomain(baseAmenityMap) }
+                AdminSimulationState(amenities = amenities)
+            } catch (e: Exception) {
+                Log.e(TAG, "getAdminAmenities failed: ${e.message}")
+                AdminSimulationState()
+            }
+        }
 
-    override suspend fun updateSimulationConfig(config: SimulationConfig) =
-        mock.updateSimulationConfig(config)
-
-    override suspend fun applySimulationPreset(preset: SimulationPreset) =
-        mock.applySimulationPreset(preset)
+    // ── Admin — single amenity override ─────────────────────────────────────
 
     override suspend fun updateAmenityOverride(
         amenityId: String,
         status: AmenityStatus?,
         crowdLevel: CrowdLevel?
-    ) = mock.updateAmenityOverride(amenityId, status, crowdLevel)
+    ) {
+        try {
+            apiService.updateAmenity(
+                amenityId,
+                AmenityOverrideRequestDto(
+                    status     = status?.displayName,
+                    crowdLevel = crowdLevel?.displayName
+                )
+            )
+            invalidateCaches()
+            adminRefreshTrigger.tryEmit(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "updateAmenity $amenityId failed: ${e.message}")
+            throw e
+        }
+    }
 
-    override suspend fun clearAmenityOverride(amenityId: String) =
-        mock.clearAmenityOverride(amenityId)
+    override suspend fun clearAmenityOverride(amenityId: String) {
+        try {
+            apiService.resetAmenity(amenityId)
+            invalidateCaches()
+            adminRefreshTrigger.tryEmit(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "resetAmenity $amenityId failed: ${e.message}")
+            throw e
+        }
+    }
+
+    // ── Admin — zone bulk control ────────────────────────────────────────────
+
+    override suspend fun updateSimulationConfig(config: SimulationConfig) {
+        try {
+            val zoneName = when (config.selectedLocation) {
+                SimulationLocation.TERMINAL_D_ALL     -> "All Zones"
+                SimulationLocation.TERMINAL_D_EAST    -> "East Zone"
+                SimulationLocation.TERMINAL_D_CENTRAL -> "Central Zone"
+                SimulationLocation.TERMINAL_D_WEST    -> "West Zone"
+            }
+            val crowdEnum = when (config.crowdLevel.coerceIn(0, 3)) {
+                0    -> CrowdLevel.EMPTY
+                1    -> CrowdLevel.SHORT
+                2    -> CrowdLevel.MEDIUM
+                else -> CrowdLevel.LONG
+            }
+            apiService.updateZone(
+                ZoneControlRequestDto(
+                    zone            = zoneName,
+                    crowdLevel      = crowdEnum.displayName,
+                    avgUsageMinutes = config.averageUsageTimeMinutes,
+                    isOpen          = config.isSystemOpen
+                )
+            )
+            invalidateCaches()
+            adminRefreshTrigger.tryEmit(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "updateZone failed: ${e.message}")
+            throw e
+        }
+    }
+
+    // ── Admin — preset scenarios ─────────────────────────────────────────────
+
+    override suspend fun applySimulationPreset(preset: SimulationPreset) {
+        try {
+            val scenarios = apiService.getScenarios()
+            val match = scenarios.firstOrNull { it.name == preset.displayName }
+                ?: throw Exception("No backend scenario matching '${preset.displayName}'")
+            apiService.applyScenario(ScenarioApplyRequestDto(match.id))
+            invalidateCaches()
+            adminRefreshTrigger.tryEmit(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "applySimulationPreset ${preset.displayName} failed: ${e.message}")
+            throw e
+        }
+    }
 
     /**
      * Updates the origin node for all future route recommendations.
@@ -242,6 +338,46 @@ class RemoteAmenityRepository @Inject constructor(
         return enrichedAmenities.filter { matchesPreferences(it, preferences) }
         // List is already sorted by total_seconds from the backend.
     }
+
+    // ── Cache invalidation ───────────────────────────────────────────────────
+
+    /** Clear both in-memory caches after any admin write so the next passenger
+     *  fetch picks up the updated state from the backend. */
+    private fun invalidateCaches() {
+        inMemoryAmenities.clear()
+        recommendationCache.clear()
+    }
+
+    // ── Admin DTO → domain model ─────────────────────────────────────────────
+
+    private fun com.smartamenities.data.remote.AmenityAdminResponseDto.toDomain(
+        baseMap: Map<String, Amenity>
+    ): Amenity {
+        val base = baseMap[id]
+        return Amenity(
+            id                     = id,
+            name                   = name,
+            type                   = type.toAmenityType(),
+            floor                  = floor,
+            locationX              = base?.locationX ?: 0.5f,
+            locationY              = base?.locationY ?: 0.5f,
+            status                 = status.toAmenityStatus(),
+            crowdLevel             = crowdLevel.toCrowdLevel(),
+            estimatedWalkMinutes   = base?.estimatedWalkMinutes ?: avgUsageMinutes,
+            isWheelchairAccessible = isWheelchairAccessible,
+            isStepFreeRoute        = isStepFreeRoute,
+            isFamilyRestroom       = isFamilyRestroom,
+            isGenderNeutral        = isGenderNeutral,
+            dataFreshnessTimestamp = System.currentTimeMillis(),
+            confidenceScore        = 1.0f,
+            gateProximity          = gateProximity
+        )
+    }
+
+    private fun String.toAmenityType(): com.smartamenities.data.model.AmenityType =
+        com.smartamenities.data.model.AmenityType.values()
+            .firstOrNull { it.displayName == this }
+            ?: com.smartamenities.data.model.AmenityType.RESTROOM
 
     // ── Enum mapping — backend sends display-value strings ───────────────────
 

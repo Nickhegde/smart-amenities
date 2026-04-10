@@ -37,6 +37,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -70,11 +72,28 @@ fun AdminSimulatorScreen(
     onBack: () -> Unit
 ) {
     val adminState by viewModel.adminState.collectAsState()
+    val adminError by viewModel.adminOperationError.collectAsState()
+    val adminSuccess by viewModel.adminOperationSuccess.collectAsState()
     val currentUserNode by viewModel.userNode.collectAsState()
     var averageUsageInput by remember { mutableStateOf(adminState.config.averageUsageTimeMinutes.toString()) }
     var draftLocation by remember { mutableStateOf(adminState.config.selectedLocation) }
     var draftCrowd by remember { mutableStateOf(adminState.config.crowdLevel.toFloat()) }
     var systemOpen by remember { mutableStateOf(adminState.config.isSystemOpen) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show a Snackbar whenever the admin API returns an error, then clear it.
+    LaunchedEffect(adminError) {
+        val msg = adminError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message = "✕  $msg", withDismissAction = true)
+        viewModel.clearAdminError()
+    }
+
+    LaunchedEffect(adminSuccess) {
+        val msg = adminSuccess ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message = "✓  $msg", withDismissAction = true)
+        viewModel.clearAdminSuccess()
+    }
 
     LaunchedEffect(adminState.config) {
         averageUsageInput = adminState.config.averageUsageTimeMinutes.toString()
@@ -83,14 +102,15 @@ fun AdminSimulatorScreen(
         systemOpen = adminState.config.isSystemOpen
     }
 
-    val visibleAmenities = remember(adminState) {
+    val visibleAmenities = remember(adminState, draftLocation) {
         adminState.amenities.filter { amenity ->
-            adminState.config.selectedLocation == SimulationLocation.TERMINAL_D_ALL ||
-                MockAmenityDataSource.getSimulationLocation(amenity) == adminState.config.selectedLocation
+            draftLocation == SimulationLocation.TERMINAL_D_ALL ||
+                MockAmenityDataSource.getSimulationLocation(amenity) == draftLocation
         }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Admin Simulator") },
