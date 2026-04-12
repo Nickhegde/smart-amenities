@@ -9,6 +9,14 @@ import retrofit2.http.Path
 
 interface ApiService {
 
+    // ── Auth ──────────────────────────────────────────────────────────────────
+
+    @POST("api/auth/signup")
+    suspend fun signup(@Body request: SignupRequestDto): AuthTokenResponseDto
+
+    @POST("api/auth/login")
+    suspend fun login(@Body request: LoginRequestDto): AuthTokenResponseDto
+
     // ── Route recommendation ──────────────────────────────────────────────────
 
     @POST("api/route/recommend")
