@@ -8,6 +8,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Wc
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -88,7 +90,14 @@ fun DataFreshnessIndicator(
     confidenceScore: Float,
     modifier: Modifier = Modifier
 ) {
-    val ageMinutes = ((System.currentTimeMillis() - timestampMillis) / 60_000).toInt()
+    // Ticks every 60 seconds so the label stays accurate without a ViewModel update.
+    val now by produceState(initialValue = System.currentTimeMillis()) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            value = System.currentTimeMillis()
+        }
+    }
+    val ageMinutes = ((now - timestampMillis) / 60_000).toInt()
     val ageText = when {
         ageMinutes < 1  -> "Updated just now"
         ageMinutes < 60 -> "Updated $ageMinutes min ago"

@@ -53,6 +53,18 @@ class AmenityViewModel @Inject constructor(
             initialValue = AdminSimulationState()
         )
 
+    // Current user location node — used by admin to simulate different starting positions.
+    private val _userNode = MutableStateFlow("COR_C")
+    val userNode: StateFlow<String> = _userNode.asStateFlow()
+
+    // One-shot error message for admin operations; null when no error is pending.
+    private val _adminOperationError = MutableStateFlow<String?>(null)
+    val adminOperationError: StateFlow<String?> = _adminOperationError.asStateFlow()
+
+    // One-shot success message for admin operations; null when no message is pending.
+    private val _adminOperationSuccess = MutableStateFlow<String?>(null)
+    val adminOperationSuccess: StateFlow<String?> = _adminOperationSuccess.asStateFlow()
+
     init {
         loadAmenities()
     }
@@ -89,13 +101,23 @@ class AmenityViewModel @Inject constructor(
 
     fun updateSimulationConfig(config: SimulationConfig) {
         viewModelScope.launch {
-            repository.updateSimulationConfig(config)
+            try {
+                repository.updateSimulationConfig(config)
+                _adminOperationSuccess.value = "Zone settings applied successfully"
+            } catch (e: Exception) {
+                _adminOperationError.value = "Failed to apply zone settings: ${e.message}"
+            }
         }
     }
 
     fun applySimulationPreset(preset: SimulationPreset) {
         viewModelScope.launch {
-            repository.applySimulationPreset(preset)
+            try {
+                repository.applySimulationPreset(preset)
+                _adminOperationSuccess.value = "'${preset.displayName}' preset applied successfully"
+            } catch (e: Exception) {
+                _adminOperationError.value = "Failed to apply preset '${preset.displayName}': ${e.message}"
+            }
         }
     }
 
@@ -105,18 +127,47 @@ class AmenityViewModel @Inject constructor(
         crowdLevel: CrowdLevel?
     ) {
         viewModelScope.launch {
-            repository.updateAmenityOverride(
-                amenityId = amenityId,
-                status = status,
-                crowdLevel = crowdLevel
-            )
+            try {
+                repository.updateAmenityOverride(
+                    amenityId  = amenityId,
+                    status     = status,
+                    crowdLevel = crowdLevel
+                )
+                _adminOperationSuccess.value = "$amenityId updated successfully"
+            } catch (e: Exception) {
+                _adminOperationError.value = "Failed to update $amenityId: ${e.message}"
+            }
         }
     }
 
     fun clearAmenityOverride(amenityId: String) {
         viewModelScope.launch {
-            repository.clearAmenityOverride(amenityId)
+            try {
+                repository.clearAmenityOverride(amenityId)
+                _adminOperationSuccess.value = "$amenityId reset to defaults"
+            } catch (e: Exception) {
+                _adminOperationError.value = "Failed to reset $amenityId: ${e.message}"
+            }
         }
+    }
+
+    fun clearAdminError() {
+        _adminOperationError.value = null
+    }
+
+    fun clearAdminSuccess() {
+        _adminOperationSuccess.value = null
+    }
+
+    /**
+     * Updates the simulated user location. Clears recommendation caches in the repository
+     * and triggers a fresh amenity load so rankings reflect the new starting point.
+     */
+    fun updateUserNode(node: String) {
+        if (node == _userNode.value) return
+        _userNode.value = node
+        repository.setUserNode(node)
+        loadAmenities()
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

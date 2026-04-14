@@ -73,6 +73,7 @@ fun HomeScreen(
     var showAuthError by remember { mutableStateOf(false) }
 
     fun openAdminDialog() {
+        if (currentUser == null || currentUser.isGuest) return
         showAdminDialog = true
         showAuthError = false
     }

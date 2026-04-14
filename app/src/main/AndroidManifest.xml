@@ -14,7 +14,8 @@
         android:allowBackup="true"
         android:label="Smart Amenities"
         android:theme="@style/Theme.SmartAmenities"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
             android:name=".MainActivity"

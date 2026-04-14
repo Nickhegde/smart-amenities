@@ -28,6 +28,7 @@ class UserDataStore @Inject constructor(
     private companion object {
         const val KEY_USERS        = "sa_users_list"
         const val KEY_SESSION_JSON = "sa_current_user_json"
+        const val KEY_AUTH_TOKEN   = "sa_auth_token"
     }
 
     // ── Password hashing ──────────────────────────────────────────────────────
@@ -70,6 +71,10 @@ class UserDataStore @Inject constructor(
             it.email.equals(email, ignoreCase = true) && it.passwordHash == passwordHash
         }
 
+    /** Finds a locally cached profile for the given email, if one exists. */
+    fun findUserByEmail(email: String): User? =
+        loadUsers().find { it.email.equals(email, ignoreCase = true) }
+
     // ── Session management ────────────────────────────────────────────────────
 
     /** Persist the active session (works for both registered users and guests). */
@@ -84,8 +89,19 @@ class UserDataStore @Inject constructor(
     }
 
     fun clearSession() {
-        prefs.edit().remove(KEY_SESSION_JSON).apply()
+        prefs.edit()
+            .remove(KEY_SESSION_JSON)
+            .remove(KEY_AUTH_TOKEN)
+            .apply()
     }
 
     fun hasActiveSession(): Boolean = restoreSession() != null
+
+    // ── JWT token ─────────────────────────────────────────────────────────────
+
+    fun saveToken(token: String) {
+        prefs.edit().putString(KEY_AUTH_TOKEN, token).apply()
+    }
+
+    fun getToken(): String? = prefs.getString(KEY_AUTH_TOKEN, null)
 }

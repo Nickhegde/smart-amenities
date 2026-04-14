@@ -330,6 +330,33 @@ object MockAmenityDataSource {
         )
     )
 
+    /**
+     * Returns the ordered list of graph node IDs that form the walking path from
+     * the passenger's starting position (COR_E, near customs) to the given amenity.
+     * Mirrors what the Python Dijkstra backend returns; used for mini-map path drawing.
+     */
+    fun getMockRouteNodeIds(amenityId: String): List<String> =
+        MOCK_ROUTE_NODE_IDS[amenityId] ?: listOf("COR_E")
+
+    private val MOCK_ROUTE_NODE_IDS: Map<String, List<String>> = mapOf(
+        // Top wall amenities — walk west along top arm from D22
+        "REST_D22" to listOf("COR_E", "D22", "REST_D22"),
+        "LAC_D22"  to listOf("COR_E", "D22", "LAC_D22"),
+        "REST_D20" to listOf("COR_E", "D22", "D21", "D20", "REST_D20"),
+        "FAM_D18"  to listOf("COR_E", "D22", "D21", "D20", "D19", "SEC_D18", "D18", "FAM_D18"),
+        "REST_D17" to listOf("COR_E", "D22", "D21", "D20", "D19", "SEC_D18", "D18", "D17", "REST_D17"),
+        "REST_D10" to listOf("COR_E", "D22", "D21", "D20", "D19", "SEC_D18", "D18", "D17", "D16", "D15", "D14", "D12", "SKY_W", "D11", "D10", "REST_D10"),
+        "REST_D6"  to listOf("COR_E", "D22", "D21", "D20", "D19", "SEC_D18", "D18", "D17", "D16", "D15", "D14", "D12", "SKY_W", "D11", "D10", "D9", "D8", "D7", "D6", "REST_D6"),
+        // Bottom wall amenities — walk west along bottom arm from D23
+        "REST_D24" to listOf("COR_E", "D23", "D24", "REST_D24"),
+        "FAM_D25"  to listOf("COR_E", "D23", "D24", "D25", "FAM_D25"),
+        "REST_D27" to listOf("COR_E", "D23", "D24", "D25", "D26", "D27", "REST_D27"),
+        "FAM_D28"  to listOf("COR_E", "D23", "D24", "D25", "D26", "D27", "D28", "FAM_D28"),
+        "REST_D29" to listOf("COR_E", "D23", "D24", "D25", "D26", "D27", "D28", "D29", "REST_D29"),
+        "REST_D36" to listOf("COR_E", "D23", "D24", "D25", "D26", "D27", "D28", "D29", "SEC_D30", "D30", "D31", "SKY_E", "D33", "D34", "D36", "REST_D36"),
+        "REST_D40" to listOf("COR_E", "D23", "D24", "D25", "D26", "D27", "D28", "D29", "SEC_D30", "D30", "D31", "SKY_E", "D33", "D34", "D36", "D37", "D38", "D39", "D40", "REST_D40"),
+    )
+
     fun getSimulationLocation(amenity: Amenity): SimulationLocation {
         val gateNumber = "D(\\d+)".toRegex()
             .find(amenity.gateProximity)

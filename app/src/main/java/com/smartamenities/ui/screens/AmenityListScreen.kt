@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +44,15 @@ fun AmenityListScreen(
     val selectedType by viewModel.selectedType.collectAsState()
     val preferences by viewModel.preferences.collectAsState()
 
+    // Auto-refresh every 5 minutes while this screen is visible.
+    // Cancelled automatically when the user navigates away.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5 * 60 * 1_000L)
+            viewModel.triggerRefresh()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -57,14 +67,22 @@ fun AmenityListScreen(
                     }
                 },
                 actions = {
-                    // Accessibility preferences shortcut (FR 4.1)
-                    if (preferences.requiresWheelchairAccess || preferences.requiresStepFreeRoute) {
-                        Icon(
-                            imageVector = Icons.Default.Accessible,
-                            contentDescription = "Accessibility active",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
+                    // One icon per active filter so the user knows exactly what's on
+                    if (preferences.requiresWheelchairAccess) {
+                        Icon(Icons.Default.Accessible, contentDescription = "Wheelchair filter active",
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp))
+                    }
+                    if (preferences.requiresStepFreeRoute) {
+                        Icon(Icons.Default.Elevator, contentDescription = "Step-free filter active",
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp))
+                    }
+                    if (preferences.preferFamilyRestroom) {
+                        Icon(Icons.Default.FamilyRestroom, contentDescription = "Family restroom filter active",
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp))
+                    }
+                    if (preferences.preferGenderNeutral) {
+                        Icon(Icons.Default.Wc, contentDescription = "Gender-neutral filter active",
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp))
                     }
                     IconButton(onClick = onOpenPreferences) {
                         Icon(Icons.Default.Tune, contentDescription = "Preferences")
