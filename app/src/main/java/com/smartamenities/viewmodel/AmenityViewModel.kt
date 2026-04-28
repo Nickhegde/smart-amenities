@@ -104,6 +104,7 @@ class AmenityViewModel @Inject constructor(
             try {
                 repository.updateSimulationConfig(config)
                 _adminOperationSuccess.value = "Zone settings applied successfully"
+                loadAmenities()
             } catch (e: Exception) {
                 _adminOperationError.value = "Failed to apply zone settings: ${e.message}"
             }
@@ -115,6 +116,7 @@ class AmenityViewModel @Inject constructor(
             try {
                 repository.applySimulationPreset(preset)
                 _adminOperationSuccess.value = "'${preset.displayName}' preset applied successfully"
+                loadAmenities()
             } catch (e: Exception) {
                 _adminOperationError.value = "Failed to apply preset '${preset.displayName}': ${e.message}"
             }
@@ -134,6 +136,7 @@ class AmenityViewModel @Inject constructor(
                     crowdLevel = crowdLevel
                 )
                 _adminOperationSuccess.value = "$amenityId updated successfully"
+                loadAmenities()
             } catch (e: Exception) {
                 _adminOperationError.value = "Failed to update $amenityId: ${e.message}"
             }
@@ -145,6 +148,7 @@ class AmenityViewModel @Inject constructor(
             try {
                 repository.clearAmenityOverride(amenityId)
                 _adminOperationSuccess.value = "$amenityId reset to defaults"
+                loadAmenities()
             } catch (e: Exception) {
                 _adminOperationError.value = "Failed to reset $amenityId: ${e.message}"
             }

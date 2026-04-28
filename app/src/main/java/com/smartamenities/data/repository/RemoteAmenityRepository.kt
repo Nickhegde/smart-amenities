@@ -101,26 +101,33 @@ class RemoteAmenityRepository @Inject constructor(
     }
 
     override fun getAmenities(preferences: UserPreferences): Flow<List<Amenity>> = flow {
-        val type = effectiveAmenityType(preferences)
-
-        // Re-filter in memory if type hasn't changed — avoids API call for
-        // wheelchair / step-free toggles which are purely client-side.
-        val memCached = inMemoryAmenities[type.name]
-        if (memCached != null) {
-            Log.d(TAG, "Re-filtering ${memCached.size} in-memory amenities for ${type.name}")
-            emit(memCached.filter { matchesPreferences(it, preferences) })
-            return@flow
-        }
-
+        // "All" — fetch every amenity type, merge, and sort by total time (walk + wait).
         try {
-            val recommendations = fetchRecommendations(type, preferences)
-            emit(recommendations)
+            val allAmenities = mutableListOf<Amenity>()
+            for (type in AmenityType.values()) {
+                val cached = inMemoryAmenities[type.name]
+                if (cached != null) {
+                    Log.d(TAG, "Using in-memory cache for ${type.name} (${cached.size} items)")
+                    allAmenities.addAll(cached)
+                } else {
+                    fetchRecommendations(type, preferences)
+                    allAmenities.addAll(inMemoryAmenities[type.name] ?: emptyList())
+                }
+            }
+            val result = allAmenities
+                .filter { matchesPreferences(it, preferences) }
+                .sortedBy { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes }
+            emit(result)
         } catch (e: Exception) {
             Log.e(TAG, "getAmenities failed, trying Room cache: ${e.message}")
-            val cached = dao.getByType(type.name)
+            val cached = AmenityType.values().flatMap { type ->
+                dao.getByType(type.name).map { it.toDomain() }
+            }
             if (cached.isNotEmpty()) {
-                Log.d(TAG, "Serving ${cached.size} Room-cached amenities for ${type.name}")
-                emit(cached.map { it.toDomain() }.filter { matchesPreferences(it, preferences) })
+                Log.d(TAG, "Serving ${cached.size} Room-cached amenities (all types)")
+                emit(cached
+                    .filter { matchesPreferences(it, preferences) }
+                    .sortedBy { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes })
             } else {
                 Log.w(TAG, "Room cache empty, falling back to mock")
                 emitAll(mock.getAmenities(preferences))
