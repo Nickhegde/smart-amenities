@@ -118,6 +118,19 @@ fun NavigationScreen(
                     )
                 }
 
+                is NavigationUiState.ClosureRerouting -> {
+                    ClosureReroutingContent(
+                        state = state,
+                        onNavigateToAlternative = { alt ->
+                            viewModel.navigateToAlternative(alt)
+                        },
+                        onEndNavigation = {
+                            viewModel.endNavigation()
+                            onEndNavigation()
+                        }
+                    )
+                }
+
                 is NavigationUiState.Arrived -> {
                     ArrivedContent(
                         amenity = state.amenity,
@@ -602,6 +615,88 @@ private fun ArrivedContent(amenity: Amenity, onDone: () -> Unit) {
             )
             Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
                 Text("Done")
+            }
+        }
+    }
+}
+
+// ── Closure detected mid-navigation ──────────────────────────────────────────
+
+@Composable
+private fun ClosureReroutingContent(
+    state: NavigationUiState.ClosureRerouting,
+    onNavigateToAlternative: (Amenity) -> Unit,
+    onEndNavigation: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Text("Destination Closed", style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold)
+            Text(
+                text = "${state.closedAmenity.name} is now ${state.closedAmenity.status.displayName.lowercase()}.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            if (state.alternative != null) {
+                val totalMin = state.alternative.estimatedWalkMinutes +
+                               state.alternative.crowdLevel.waitEstimateMinutes
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Nearest alternative",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            state.alternative.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            "${state.alternative.gateProximity} · $totalMin min",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Button(
+                            onClick = { onNavigateToAlternative(state.alternative) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Navigate here")
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    "No open alternatives found nearby.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+
+            OutlinedButton(onClick = onEndNavigation, modifier = Modifier.fillMaxWidth()) {
+                Text("Return to map")
             }
         }
     }

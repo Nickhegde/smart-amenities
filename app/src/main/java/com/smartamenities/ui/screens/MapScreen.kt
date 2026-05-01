@@ -157,14 +157,12 @@ fun MapScreen(
     onSignOut: () -> Unit = {},
     onNavigateToAuth: () -> Unit = {}
 ) {
-    val uiState    by viewModel.uiState.collectAsState()
+    val uiState      by viewModel.uiState.collectAsState()
     val selectedType by viewModel.selectedType.collectAsState()
     val preferences  by viewModel.preferences.collectAsState()
-
-    val liveAmenities = remember(uiState) {
-        if (uiState is AmenityUiState.Success) (uiState as AmenityUiState.Success).amenities
-        else emptyList()
-    }
+    // mapAmenities always contains all types — persists through background refreshes
+    // so pins never flicker or lose their status during silent polling.
+    val mapAmenities by viewModel.mapAmenities.collectAsState()
 
     var selectedFloor by remember { mutableStateOf(TerminalFloor.GATES) }
     var activePin     by remember { mutableStateOf<MapPin?>(null) }
@@ -252,7 +250,7 @@ fun MapScreen(
             // ── Tab content ───────────────────────────────────────────────────
             when (selectedTab) {
                 0 -> MapTab(
-                    liveAmenities = liveAmenities,
+                    liveAmenities = mapAmenities,
                     selectedFloor = selectedFloor,
                     activePin     = activePin.takeIf { it?.floor == selectedFloor },
                     onFloorSelected = { selectedFloor = it; activePin = null },

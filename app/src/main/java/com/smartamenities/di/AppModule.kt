@@ -39,7 +39,8 @@ abstract class AppModule {
 
     companion object {
 
-        private const val BASE_URL = "http://18.188.216.120/"
+        private const val BASE_URL = "http://18.188.216.120/"  // prod
+        // private const val BASE_URL = "http://10.0.2.2:8000/"  // local dev
 
         @Provides
         @Singleton

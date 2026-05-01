@@ -6,6 +6,7 @@ import com.smartamenities.data.model.*
 import com.smartamenities.data.repository.AmenityRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -26,6 +27,7 @@ class AmenityViewModel @Inject constructor(
     private val repository: AmenityRepository
 ) : ViewModel() {
     private var amenitiesJob: Job? = null
+    private var mapJob: Job? = null
 
     // ── User preferences (stored in memory; Room persistence comes in Iteration 2) ──
 
@@ -41,6 +43,10 @@ class AmenityViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<AmenityUiState>(AmenityUiState.Loading)
     val uiState: StateFlow<AmenityUiState> = _uiState.asStateFlow()
+
+    // Map always shows all amenity types regardless of the list's selectedType filter.
+    private val _mapAmenities = MutableStateFlow<List<Amenity>>(emptyList())
+    val mapAmenities: StateFlow<List<Amenity>> = _mapAmenities.asStateFlow()
 
     // Selected amenity for the detail panel (FR 1.1.2)
     private val _selectedAmenity = MutableStateFlow<Amenity?>(null)
@@ -65,8 +71,14 @@ class AmenityViewModel @Inject constructor(
     private val _adminOperationSuccess = MutableStateFlow<String?>(null)
     val adminOperationSuccess: StateFlow<String?> = _adminOperationSuccess.asStateFlow()
 
+    companion object {
+        private const val LIVE_POLL_INTERVAL_MS = 5_000L
+    }
+
     init {
         loadAmenities()
+        startLivePolling()
+        observeUserNodeUpdates()
     }
 
     // ── Public API called by the UI ───────────────────────────────────────────
@@ -176,28 +188,68 @@ class AmenityViewModel @Inject constructor(
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private fun loadAmenities() {
+    // Keeps _userNode in sync when NavigationViewModel updates the node mid-navigation
+    // (e.g., closure detected at step 3 → node becomes the gate the user is near).
+    private fun observeUserNodeUpdates() {
+        viewModelScope.launch {
+            repository.userNodeUpdates.collect { node ->
+                if (node != _userNode.value) {
+                    _userNode.value = node
+                }
+            }
+        }
+    }
+
+    private fun startLivePolling() {
+        viewModelScope.launch {
+            while (true) {
+                delay(LIVE_POLL_INTERVAL_MS)
+                repository.clearCaches()
+                loadAmenities(silent = true)
+            }
+        }
+    }
+
+    private fun loadAmenities(silent: Boolean = false) {
+        // ── List: respects the active type filter ─────────────────────────────
         amenitiesJob?.cancel()
         amenitiesJob = viewModelScope.launch {
-            _uiState.value = AmenityUiState.Loading
+            if (!silent) _uiState.value = AmenityUiState.Loading
 
             val flow = selectedType.value
                 ?.let { repository.getAmenitiesByType(it, preferences.value) }
                 ?: repository.getAmenities(preferences.value)
 
             flow
-                .catch { e -> _uiState.value = AmenityUiState.Error(e.message ?: "Unknown error") }
+                .catch { e ->
+                    if (!silent) _uiState.value = AmenityUiState.Error(e.message ?: "Unknown error")
+                }
                 .collect { amenities ->
-                    _uiState.value = if (amenities.isEmpty()) {
-                        AmenityUiState.Empty
-                    } else {
-                        AmenityUiState.Success(amenities)
+                    // Map: all amenities including closed — backend now returns both open and
+                    // unavailable so pins show the correct status color.
+                    if (selectedType.value == null && amenities.isNotEmpty()) {
+                        _mapAmenities.value = amenities
                     }
+
+                    // List: open amenities only, sorted by time (backend already orders them first).
+                    val openAmenities = amenities.filter { it.status == AmenityStatus.OPEN }
+                    _uiState.value = if (openAmenities.isEmpty()) AmenityUiState.Empty
+                                     else AmenityUiState.Success(openAmenities)
 
                     _selectedAmenity.value = _selectedAmenity.value?.let { selected ->
                         amenities.find { it.id == selected.id } ?: selected
                     }
                 }
+        }
+
+        // ── Map: always all types (skipped when All is already selected above) ─
+        if (selectedType.value != null) {
+            mapJob?.cancel()
+            mapJob = viewModelScope.launch {
+                repository.getAmenities(preferences.value)
+                    .catch { }
+                    .collect { all -> if (all.isNotEmpty()) _mapAmenities.value = all }
+            }
         }
     }
 }

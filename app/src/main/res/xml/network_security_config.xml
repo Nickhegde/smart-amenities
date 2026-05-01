@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext HTTP to AWS EC2 backend -->
+    <!-- Allow cleartext HTTP to AWS EC2 backend (prod) -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">18.188.216.120</domain>
+    </domain-config>
+    <!-- Allow cleartext HTTP to host machine from Android emulator (local dev) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>
 </network-security-config>
