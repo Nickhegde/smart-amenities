@@ -1,6 +1,7 @@
 package com.smartamenities.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -11,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessible
 import androidx.compose.material.icons.filled.ChevronRight
@@ -494,18 +497,14 @@ private fun TerminalDFloorPlan(
     modifier:      Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val gateLabelPx = with(density) { 9.sp.toPx() }
-    val zoneTextPx  = with(density) { 7.5f.sp.toPx() }
-    val smallTextPx = with(density) { 6.5f.sp.toPx() }
-    val pinTextPx   = with(density) { 7.sp.toPx() }
+    val pinTextPx = with(density) { 7.sp.toPx() }
 
     // All pins for every floor; filter to the selected floor for display
-    val allPins   = remember(liveAmenities) { buildPins(liveAmenities) }
-    val pins      = remember(allPins, selectedFloor) { allPins.filter { it.floor == selectedFloor } }
-    // "You are here" near D22 customs exit is only relevant on Level 1 (Arrivals)
+    val allPins = remember(liveAmenities) { buildPins(liveAmenities) }
+    val pins = remember(allPins, selectedFloor) { allPins.filter { it.floor == selectedFloor } }
     val showYouAreHere = selectedFloor == TerminalFloor.ARRIVALS
 
-    val mapWidth  = 920.dp
+    val mapWidth = 920.dp
     val scrollState = rememberScrollState()
 
     Box(
@@ -513,167 +512,64 @@ private fun TerminalDFloorPlan(
             .background(Color(0xFFEAEAE6))
             .horizontalScroll(scrollState)
     ) {
-        Canvas(
+        Box(
             modifier = Modifier
                 .width(mapWidth)
                 .fillMaxHeight()
-                .pointerInput(pins) {
-                    detectTapGestures { offset ->
-                        val w  = size.width.toFloat()
-                        val h  = size.height.toFloat()
-                        val bL = w * 0.01f
-                        val bW = w * 0.98f
-                        val hit = pins.firstOrNull { pin ->
-                            val px = bL + pin.xFraction * bW
-                            val py = pin.yFraction * h
-                            sqrt((offset.x - px) * (offset.x - px) +
-                                 (offset.y - py) * (offset.y - py)) < 42f
-                        }
-                        hit?.let { onPinTapped(it) }
-                    }
-                }
+                .background(Color(0xFFF5F5F0))
         ) {
-            val w  = size.width
-            val h  = size.height
-            val bL = w * 0.01f
-            val bR = w * 0.99f
-            val bW = bR - bL
+            // TODO: Load terminal_d.png from drawable resources
+            // Image(
+            //     painter = painterResource(id = R.drawable.terminal_d),
+            //     contentDescription = "Terminal D floor plan",
+            //     contentScale = ContentScale.Crop,
+            //     modifier = Modifier.matchParentSize()
+            // )
 
-            // ── Layout constants (horseshoe / U-shape) ────────────────────────
-            val gStubH    = h * 0.11f           // gate stub protrusion (~40dp)
-            val topArmT   = h * 0.15f           // top edge of top concourse arm
-            val topArmB   = h * 0.42f           // bottom edge of top arm
-            val botArmT   = h * 0.58f           // top edge of bottom arm
-            val botArmB   = h * 0.85f           // bottom edge of bottom arm
-            val eastX     = bL + bW * 0.84f     // east connector starts near D20–D22
-            val gSlotW    = bW / 22f            // x-slot width per gate number
-            val gHalfW    = gSlotW * 0.34f      // drawn stub half-width (~28dp)
-            val topStubTop = topArmT - gStubH
-            val corrMidY  = (topArmB + botArmT) / 2f
+            Canvas(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(pins) {
+                        detectTapGestures { offset ->
+                            val w = size.width.toFloat()
+                            val h = size.height.toFloat()
+                            val bL = w * 0.01f
+                            val bW = w * 0.98f
+                            val hit = pins.firstOrNull { pin ->
+                                val px = bL + pin.xFraction * bW
+                                val py = pin.yFraction * h
+                                sqrt((offset.x - px) * (offset.x - px) +
+                                     (offset.y - py) * (offset.y - py)) < 42f
+                            }
+                            hit?.let { onPinTapped(it) }
+                        }
+                    }
+            ) {
+                val w = size.width
+                val h = size.height
+                val bL = w * 0.01f
+                val bW = w * 0.98f
+                val corrMidY = h * 0.5f
 
-            // ── Background — outside terminal ─────────────────────────────────
-            drawRect(Color(0xFFEAEAE6), topLeft = Offset(0f, 0f), size = Size(w, h))
+                // Optional translucent overlay so pins remain readable over a detailed base map
+                drawRect(Color(0x33FFFFFF), topLeft = Offset(0f, 0f), size = Size(w, h))
 
-            // Subtle taxiway curves at bottom of canvas for airport context
-            drawTaxiwayLines(w, h)
+                if (showYouAreHere) {
+                    val youX = bL + bW - w * 0.035f
+                    val youY = corrMidY
+                    drawCircle(Color(0x330052A5), 24f, Offset(youX, youY))
+                    drawCircle(Color(0xFF0052A5), 13f, Offset(youX, youY))
+                    drawCircle(Color.White, 6f, Offset(youX, youY))
+                    drawZoneLabel("You are here", youX, youY + 28f, 6.5f.sp.toPx(),
+                        android.graphics.Color.argb(255, 0, 82, 165))
+                }
 
-            // ── Terminal floor fill (3 rects form the U / horseshoe shape) ────
-            val floorColor = Color(0xFFF9F9F6)
-            // Top concourse arm
-            drawRect(floorColor, topLeft = Offset(bL, topArmT), size = Size(bW, topArmB - topArmT))
-            // Bottom concourse arm
-            drawRect(floorColor, topLeft = Offset(bL, botArmT), size = Size(bW, botArmB - botArmT))
-            // East connector hall (links both arms on the right side)
-            drawRect(floorColor, topLeft = Offset(eastX, topArmB),
-                size = Size(bR - eastX, botArmT - topArmB))
-
-            // ── Corridor (blue-tinted walkway between the two arms) ───────────
-            drawRect(Color(0xFFEFF3FB),
-                topLeft = Offset(bL, topArmB),
-                size    = Size(eastX - bL, botArmT - topArmB))
-
-            // ── Walking lane center lines (dashed, subtle) ────────────────────
-            val topArmMidY = (topArmT + topArmB) / 2f
-            val botArmMidY = (botArmT + botArmB) / 2f
-            drawLaneLine(bL, topArmMidY, eastX, topArmMidY)
-            drawLaneLine(bL, botArmMidY, eastX, botArmMidY)
-
-            // ── Terminal U-shape outline ──────────────────────────────────────
-            val uPath = Path().apply {
-                moveTo(bL, topArmT)
-                lineTo(bR, topArmT)
-                lineTo(bR, botArmB)
-                lineTo(bL, botArmB)
-                lineTo(bL, botArmT)
-                lineTo(eastX, botArmT)
-                lineTo(eastX, topArmB)
-                lineTo(bL, topArmB)
-                close()
-            }
-            drawPath(uPath, Color(0xFF8A8A88), style = Stroke(width = 4f))
-
-            // ── Skylink 1 zone (D11–D20, top arm) ────────────────────────────
-            val sl1X1   = bL + (11 - 5).toFloat() / 17f * bW
-            val sl1X2   = bL + (20 - 5).toFloat() / 17f * bW
-            val slHTop  = (topArmB - topArmT) * 0.5f
-            val slMidTop = (topArmT + topArmB) / 2f
-            drawSkylink(sl1X1, slMidTop - slHTop / 2f, sl1X2 - sl1X1, slHTop,
-                (sl1X1 + sl1X2) / 2f, slMidTop + 4f, zoneTextPx)
-
-            // ── Skylink 2 zone (D24–D34, bottom arm) ─────────────────────────
-            val sl2X1   = bL + (1f - (34 - 23).toFloat() / 17f) * bW
-            val sl2X2   = bL + (1f - (24 - 23).toFloat() / 17f) * bW
-            val slHBot  = (botArmB - botArmT) * 0.5f
-            val slMidBot = (botArmT + botArmB) / 2f
-            drawSkylink(sl2X1, slMidBot - slHBot / 2f, sl2X2 - sl2X1, slHBot,
-                (sl2X1 + sl2X2) / 2f, slMidBot + 4f, zoneTextPx)
-
-            // ── Top gate stubs (D5–D22, protrude north from top arm) ──────────
-            for (n in 5..22) {
-                val gx = bL + (n - 5).toFloat() / 17f * bW
-                drawRoundRect(Color(0xFFECECEA),
-                    topLeft     = Offset(gx - gHalfW, topStubTop),
-                    size        = Size(gHalfW * 2f, gStubH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f))
-                drawRoundRect(Color(0xFFA8A8A4),
-                    topLeft     = Offset(gx - gHalfW, topStubTop),
-                    size        = Size(gHalfW * 2f, gStubH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f),
-                    style        = Stroke(1.5f))
-                drawGateLabelInStub("D$n", gx, topStubTop + gStubH * 0.55f, gateLabelPx)
-            }
-
-            // ── Bottom gate stubs (D23–D40, protrude south from bottom arm) ───
-            for (n in 23..40) {
-                val gx = bL + (1f - (n - 23).toFloat() / 17f) * bW
-                drawRoundRect(Color(0xFFECECEA),
-                    topLeft     = Offset(gx - gHalfW, botArmB),
-                    size        = Size(gHalfW * 2f, gStubH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f))
-                drawRoundRect(Color(0xFFA8A8A4),
-                    topLeft     = Offset(gx - gHalfW, botArmB),
-                    size        = Size(gHalfW * 2f, gStubH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f),
-                    style        = Stroke(1.5f))
-                drawGateLabelInStub("D$n", gx, botArmB + gStubH * 0.55f, gateLabelPx)
-            }
-
-            // ── Security checkpoints (along corridor) ─────────────────────────
-            val corrSpan = botArmT - topArmB
-            drawSecurityMarker(bL + (18 - 5).toFloat() / 17f * bW,
-                corrMidY - corrSpan * 0.15f, 13f, smallTextPx)
-            drawSecurityMarker(bL + (1f - (30 - 23).toFloat() / 17f) * bW,
-                corrMidY + corrSpan * 0.15f, 13f, smallTextPx)
-
-            // ── Customs / Immigration zone (east connector) ───────────────────
-            val cusX = eastX
-            val cusW = bR - eastX
-            drawRect(Color(0xFFE8F5E9), topLeft = Offset(cusX, topArmB),
-                size = Size(cusW, botArmT - topArmB))
-            drawRect(Color(0xFF43A047), topLeft = Offset(cusX, topArmB),
-                size = Size(cusW, botArmT - topArmB), style = Stroke(2f))
-            drawZoneLabel("CUSTOMS/",    cusX + cusW / 2f, corrMidY - 7f,  zoneTextPx,
-                android.graphics.Color.argb(255, 27, 94, 32))
-            drawZoneLabel("IMMIGRATION", cusX + cusW / 2f, corrMidY + 9f, zoneTextPx,
-                android.graphics.Color.argb(255, 27, 94, 32))
-
-            // ── "You are here" dot (Level 1 · Arrivals only) ─────────────────
-            if (showYouAreHere) {
-                val youX = bL + (17f / 17f) * bW - w * 0.035f
-                val youY = corrMidY
-                drawCircle(Color(0x330052A5), 24f, Offset(youX, youY))
-                drawCircle(Color(0xFF0052A5), 13f, Offset(youX, youY))
-                drawCircle(Color.White,        6f, Offset(youX, youY))
-                drawZoneLabel("You are here", youX, youY + 28f, smallTextPx,
-                    android.graphics.Color.argb(255, 0, 82, 165))
-            }
-
-            // ── Amenity pins ──────────────────────────────────────────────────
-            pins.forEach { pin ->
-                val px = bL + pin.xFraction * bW
-                val py = pin.yFraction * h
-                drawAmenityPin(pin.amenity, px, py,
-                    isSelected = activePin?.amenity?.id == pin.amenity.id, pinTextPx)
+                pins.forEach { pin ->
+                    val px = bL + pin.xFraction * bW
+                    val py = pin.yFraction * h
+                    drawAmenityPin(pin.amenity, px, py,
+                        isSelected = activePin?.amenity?.id == pin.amenity.id, pinTextPx)
+                }
             }
         }
     }

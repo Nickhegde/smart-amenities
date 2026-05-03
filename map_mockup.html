@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Amenities - Terminal D Map</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 920px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .top-bar {
+            background: linear-gradient(135deg, #1565C0 0%, #0D47A1 100%);
+            color: white;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .top-bar h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .top-bar .subtitle {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        .tabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 16px;
+            text-align: center;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            color: #1565C0;
+            border-bottom-color: #1565C0;
+        }
+        
+        .floor-selector {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #e0e0e0;
+            overflow-x: auto;
+        }
+        
+        .floor-chip {
+            padding: 8px 16px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+        
+        .floor-chip.active {
+            background: #1565C0;
+            color: white;
+            border-color: #1565C0;
+        }
+        
+        .floor-description {
+            padding: 8px 16px;
+            background: #E3F2FD;
+            font-size: 12px;
+            color: #0D47A1;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .map-container {
+            position: relative;
+            width: 100%;
+            height: 600px;
+            background: linear-gradient(135deg, #fafafa 0%, #f5f5f0 100%);
+            overflow: hidden;
+        }
+        
+        .floor-plan-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: url('file:///d:/SE%20Final/app/src/main/res/drawable/terminal_d.png');
+            background-size: cover;
+            background-position: center;
+            opacity: 1;
+        }
+        
+        .floor-plan-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .pins-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+        }
+        
+        .pin {
+            position: absolute;
+            width: 40px;
+            height: 50px;
+            cursor: pointer;
+            transform: translate(-20px, -50px);
+            animation: dropIn 0.4s ease-out;
+        }
+        
+        @keyframes dropIn {
+            0% {
+                transform: translate(-20px, -100px);
+                opacity: 0;
+            }
+            100% {
+                transform: translate(-20px, -50px);
+                opacity: 1;
+            }
+        }
+        
+        .pin-head {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 3px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        }
+        
+        .pin-tail {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+        }
+        
+        .pin.open .pin-head {
+            background: #2E7D32;
+        }
+        
+        .pin.open .pin-tail {
+            border-top: 10px solid #2E7D32;
+        }
+        
+        .pin.closed .pin-head {
+            background: #C62828;
+        }
+        
+        .pin.closed .pin-tail {
+            border-top: 10px solid #C62828;
+        }
+        
+        .pin.crowd-dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid white;
+            top: -5px;
+            right: -5px;
+        }
+        
+        .pin.empty .crowd-dot {
+            background: #1565C0;
+        }
+        
+        .pin.short .crowd-dot {
+            background: #2E7D32;
+        }
+        
+        .pin.medium .crowd-dot {
+            background: #F9A825;
+        }
+        
+        .pin.long .crowd-dot {
+            background: #C62828;
+        }
+        
+        .pin:hover .pin-head {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.35), 0 0 0 4px rgba(21, 101, 192, 0.2);
+            transform: translateX(-50%) scale(1.15);
+        }
+        
+        .info-card {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            min-width: 280px;
+            max-width: 400px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            animation: slideUp 0.3s ease-out;
+            z-index: 10;
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateX(-50%) translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .info-card h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .info-card .location {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        
+        .status-chip {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .status-chip.open {
+            background: #E8F5E9;
+            color: #2E7D32;
+        }
+        
+        .status-chip.crowd {
+            background: #E3F2FD;
+            color: #1565C0;
+        }
+        
+        .navigate-btn {
+            width: 100%;
+            padding: 12px;
+            background: #1565C0;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .navigate-btn:hover {
+            background: #0D47A1;
+            box-shadow: 0 4px 12px rgba(21, 101, 192, 0.3);
+        }
+        
+        .legend {
+            display: flex;
+            gap: 20px;
+            padding: 12px 16px;
+            background: #f9f9f9;
+            font-size: 12px;
+            border-top: 1px solid #e0e0e0;
+            flex-wrap: wrap;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div>
+                <h1>Terminal D</h1>
+                <div class="subtitle">DFW Airport</div>
+            </div>
+            <div>⚙️ Settings</div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active">📍 Map</div>
+            <div class="tab">📋 List</div>
+        </div>
+        
+        <!-- Floor Selector -->
+        <div class="floor-selector">
+            <div class="floor-chip active">Level 3 · Gates</div>
+            <div class="floor-chip">Level 1 · Arrivals</div>
+            <div class="floor-chip">Level 4 · Mezzanine</div>
+        </div>
+        
+        <div class="floor-description">
+            Security, all gates D5–D40, shops & most restrooms
+        </div>
+        
+        <!-- Map Container -->
+        <div class="map-container">
+            <div class="floor-plan-bg"></div>
+            <div class="floor-plan-overlay"></div>
+            
+            <div class="pins-layer">
+                <!-- Amenity Pins positioned on Terminal D map -->
+                <!-- Top Concourse (D5-D22) -->
+                <div class="pin open empty" style="left: 12%; top: 25%;" title="Restroom D6">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open short" style="left: 22%; top: 28%;" title="Restroom D10">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open medium" style="left: 35%; top: 22%;" title="Restroom D17">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open long" style="left: 45%; top: 25%;" title="Family Restroom D18">
+                    <div class="pin-head">F</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open short" style="left: 55%; top: 28%;" title="Restroom D20">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <!-- Bottom Concourse (D23-D40) -->
+                <div class="pin open short" style="left: 58%; top: 72%;" title="Restroom D24">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open medium" style="left: 48%; top: 75%;" title="Restroom D27">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open long" style="left: 38%; top: 72%;" title="Family Restroom D28">
+                    <div class="pin-head">F</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin closed short" style="left: 28%; top: 75%;" title="Restroom D29">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <div class="pin open short" style="left: 18%; top: 72%;" title="Restroom D36">
+                    <div class="pin-head">WC</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <!-- Lactation Room (Mezzanine) -->
+                <div class="pin open empty" style="left: 52%; top: 15%;" title="Lactation Room D22">
+                    <div class="pin-head">L</div>
+                    <div class="pin-tail"></div>
+                    <div class="crowd-dot"></div>
+                </div>
+                
+                <!-- Info Card for selected pin -->
+                <div class="info-card">
+                    <h3>Restroom near D17</h3>
+                    <div class="location">🚪 Level 3 · Gates</div>
+                    
+                    <div>
+                        <span class="status-chip open">✓ Open</span>
+                        <span class="status-chip crowd">🕐 3 min wait</span>
+                    </div>
+                    
+                    <div style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                        ♿ Wheelchair accessible • Family restroom nearby
+                    </div>
+                    
+                    <button class="navigate-btn">🧭 Start Navigation</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #2E7D32;"></div>
+                <span>Open</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #C62828;"></div>
+                <span>Closed</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #1565C0;"></div>
+                <span>Low crowd</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #F9A825;"></div>
+                <span>Medium crowd</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #C62828;"></div>
+                <span>Long wait</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
