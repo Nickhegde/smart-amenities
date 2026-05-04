@@ -14,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -26,7 +25,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.smartamenities.data.graph.TerminalDGraph
 import com.smartamenities.data.model.*
 import com.smartamenities.viewmodel.NavigationUiState
 import com.smartamenities.viewmodel.NavigationViewModel
@@ -178,7 +176,7 @@ private fun NavigatingContent(
             totalSteps        = state.route.steps.size,
             modifier          = Modifier
                 .fillMaxWidth()
-                .height(160.dp)
+                .height(220.dp)
         )
 
         // ── Current step — shown prominently (FR 2.2.1) ──────────────────────
@@ -315,7 +313,70 @@ private fun StepListItem(step: NavigationStep, isNext: Boolean) {
     }
 }
 
-// ── Route mini-map with animated path ─────────────────────────────────────────
+// ── Route mini-map — real map background, auto-zoomed to route ────────────────
+
+// Image-coordinate (x,y) lookup for every graph node.
+// Matches the 431×793 terminal_d.png; restroom nodes use the same values as
+// STATIC_LOCATIONS in MapScreen so they align with the visible amenity pins.
+private val NAV_IMAGE_COORDS: Map<String, Pair<Float, Float>> = mapOf(
+    // ── Corridor spine ────────────────────────────────────────────────────────
+    "COR_W"   to Pair(0.75f, 0.93f),
+    "SKY_W"   to Pair(0.62f, 0.90f),
+    "SKY_E"   to Pair(0.46f, 0.83f),
+    "SEC_D18" to Pair(0.40f, 0.79f),
+    "COR_C"   to Pair(0.37f, 0.68f),
+    "COR_E"   to Pair(0.33f, 0.56f),
+    "SEC_D30" to Pair(0.34f, 0.32f),
+    // ── Gate nodes ────────────────────────────────────────────────────────────
+    "D5"  to Pair(0.82f, 0.97f),
+    "D6"  to Pair(0.80f, 0.95f),
+    "D7"  to Pair(0.80f, 0.94f),
+    "D8"  to Pair(0.88f, 0.93f),
+    "D9"  to Pair(0.77f, 0.92f),
+    "D10" to Pair(0.68f, 0.91f),
+    "D11" to Pair(0.58f, 0.93f),
+    "D12" to Pair(0.42f, 0.94f),
+    "D14" to Pair(0.52f, 0.88f),
+    "D15" to Pair(0.58f, 0.86f),
+    "D16" to Pair(0.62f, 0.85f),
+    "D17" to Pair(0.66f, 0.84f),
+    "D18" to Pair(0.38f, 0.81f),
+    "D19" to Pair(0.35f, 0.76f),
+    "D20" to Pair(0.32f, 0.73f),
+    "D21" to Pair(0.28f, 0.67f),
+    "D22" to Pair(0.22f, 0.57f),
+    "D23" to Pair(0.22f, 0.47f),
+    "D24" to Pair(0.22f, 0.37f),
+    "D25" to Pair(0.22f, 0.31f),
+    "D26" to Pair(0.22f, 0.27f),
+    "D27" to Pair(0.22f, 0.24f),
+    "D28" to Pair(0.28f, 0.20f),
+    "D29" to Pair(0.22f, 0.16f),
+    "D30" to Pair(0.38f, 0.28f),
+    "D31" to Pair(0.50f, 0.22f),
+    "D33" to Pair(0.40f, 0.08f),
+    "D34" to Pair(0.52f, 0.06f),
+    "D36" to Pair(0.73f, 0.04f),
+    "D37" to Pair(0.88f, 0.03f),
+    "D38" to Pair(0.88f, 0.06f),
+    "D39" to Pair(0.82f, 0.09f),
+    "D40" to Pair(0.75f, 0.12f),
+    // ── Amenity nodes (calibrated to match MapScreen pin positions) ───────────
+    "REST_D6"  to Pair(0.80f, 0.95f),
+    "REST_D10" to Pair(0.68f, 0.93f),
+    "REST_D17" to Pair(0.74f, 0.87f),
+    "REST_D20" to Pair(0.27f, 0.71f),
+    "REST_D22" to Pair(0.27f, 0.63f),
+    "REST_D24" to Pair(0.22f, 0.36f),
+    "REST_D27" to Pair(0.22f, 0.22f),
+    "REST_D29" to Pair(0.22f, 0.14f),
+    "REST_D36" to Pair(0.75f, 0.06f),
+    "REST_D40" to Pair(0.75f, 0.12f),
+    "FAM_D18"  to Pair(0.24f, 0.84f),
+    "FAM_D25"  to Pair(0.22f, 0.30f),
+    "FAM_D28"  to Pair(0.35f, 0.18f),
+    "LAC_D22"  to Pair(0.24f, 0.66f),
+)
 
 @Composable
 private fun RouteMapPreview(
@@ -325,208 +386,225 @@ private fun RouteMapPreview(
     totalSteps: Int,
     modifier: Modifier = Modifier
 ) {
-    val nodeMap = remember { TerminalDGraph.nodes.associateBy { it.id } }
-    val pathNodes = remember(routeNodeIds) { routeNodeIds.mapNotNull { nodeMap[it] } }
-
     val infiniteTransition = rememberInfiniteTransition(label = "routePath")
     val dashPhase by infiniteTransition.animateFloat(
-        initialValue = 38f,
-        targetValue  = 0f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
+        initialValue = 30f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
         label = "dashPhase"
     )
 
-    // pathToNavigationSteps() uses path.zipWithNext(), so step k = edge node[k]→node[k+1].
-    // Therefore the user's current position in the graph is node[currentStepIndex].
-    val currentNodeIndex = currentStepIndex.coerceIn(0, (pathNodes.size - 1).coerceAtLeast(0))
+    val imgCoords = remember(routeNodeIds) {
+        routeNodeIds.mapNotNull { NAV_IMAGE_COORDS[it] }
+    }
+    val currentNodeIndex = currentStepIndex.coerceIn(0, (imgCoords.size - 1).coerceAtLeast(0))
 
-    Canvas(modifier = modifier.background(Color(0xFFCFCFCA))) {
-        val w  = size.width
-        val h  = size.height
-        val bL = w * 0.02f
-        val bR = w * 0.98f
-        val bW = bR - bL
+    Canvas(modifier = modifier) {
+        if (imgCoords.size < 2) return@Canvas
+        val cw = size.width
+        val ch = size.height
 
-        val topArmT = h * 0.08f
-        val topArmB = h * 0.42f
-        val botArmT = h * 0.58f
-        val botArmB = h * 0.92f
-        val eastX   = bL + bW * 0.84f
+        // ── Viewport: bounding box of route + padding ─────────────────────────
+        val pad = 0.09f
+        var minX = imgCoords.minOf { it.first }
+        var maxX = imgCoords.maxOf { it.first }
+        var minY = imgCoords.minOf { it.second }
+        var maxY = imgCoords.maxOf { it.second }
 
-        // ── Simplified floor plan ─────────────────────────────────────────────
-        val floorColor = Color(0xFFF2F2EE)
-        drawRect(floorColor, topLeft = Offset(bL, topArmT), size = Size(bW, topArmB - topArmT))
-        drawRect(floorColor, topLeft = Offset(bL, botArmT), size = Size(bW, botArmB - botArmT))
-        drawRect(floorColor, topLeft = Offset(eastX, topArmB), size = Size(bR - eastX, botArmT - topArmB))
-        drawRect(Color(0xFFD8E8F8), topLeft = Offset(bL, topArmB), size = Size(eastX - bL, botArmT - topArmB))
+        val minSpan = 0.22f
+        if (maxX - minX < minSpan) { val cx = (minX + maxX) / 2f; minX = cx - minSpan/2f; maxX = cx + minSpan/2f }
+        if (maxY - minY < minSpan) { val cy = (minY + maxY) / 2f; minY = cy - minSpan/2f; maxY = cy + minSpan/2f }
 
-        val uPath = Path().apply {
-            moveTo(bL, topArmT); lineTo(bR, topArmT)
-            lineTo(bR, botArmB); lineTo(bL, botArmB)
-            lineTo(bL, botArmT); lineTo(eastX, botArmT)
-            lineTo(eastX, topArmB); lineTo(bL, topArmB)
-            close()
+        var cropL = (minX - pad).coerceIn(0f, 1f)
+        var cropR = (maxX + pad).coerceIn(0f, 1f)
+        var cropT = (minY - pad).coerceIn(0f, 1f)
+        var cropB = (maxY + pad).coerceIn(0f, 1f)
+
+        // Expand to match canvas aspect ratio (prevents distortion)
+        val canvasAspect = cw / ch
+        val cropWFrac = cropR - cropL
+        val cropHFrac = cropB - cropT
+        if (cropWFrac / cropHFrac < canvasAspect) {
+            val extra = (cropHFrac * canvasAspect - cropWFrac) / 2f
+            cropL = (cropL - extra).coerceIn(0f, 1f)
+            cropR = (cropR + extra).coerceIn(0f, 1f)
+        } else {
+            val extra = (cropWFrac / canvasAspect - cropHFrac) / 2f
+            cropT = (cropT - extra).coerceIn(0f, 1f)
+            cropB = (cropB + extra).coerceIn(0f, 1f)
         }
-        drawPath(uPath, Color(0xFF707070), style = Stroke(width = 4f))
 
-        if (pathNodes.size < 2) return@Canvas
+        // Inset all mapped coordinates by edgeMargin so nodes never land exactly
+        // at the canvas boundary — prevents labels/strokes clipping at the edges.
+        val edgeMargin = 16f
+        fun toCanvas(ix: Float, iy: Float): Offset = Offset(
+            edgeMargin + (ix - cropL) / (cropR - cropL) * (cw - 2 * edgeMargin),
+            edgeMargin + (iy - cropT) / (cropB - cropT) * (ch - 2 * edgeMargin)
+        )
+        fun inView(ix: Float, iy: Float): Boolean =
+            ix in (cropL - 0.04f)..(cropR + 0.04f) && iy in (cropT - 0.04f)..(cropB + 0.04f)
 
-        fun nodeX(nx: Float) = bL + nx * bW
-        fun nodeY(ny: Float) = ny * h
+        // ── Schematic background ──────────────────────────────────────────────
+        drawRect(Color(0xFFEDF2F7))
 
-        // ── Completed segment: origin → currentNodeIndex (gray) ──────────────
+        // ── Terminal corridor skeleton (vector "roads", infinite sharpness) ────
+        // Build a Path from a sequence of node IDs, drawing through all nodes
+        // even those outside the viewport (canvas clips naturally).
+        fun buildRoadPath(ids: List<String>): Path {
+            val p = Path()
+            var started = false
+            for (id in ids) {
+                val c = NAV_IMAGE_COORDS[id] ?: continue
+                val pt = toCanvas(c.first, c.second)
+                if (!started) { p.moveTo(pt.x, pt.y); started = true } else p.lineTo(pt.x, pt.y)
+            }
+            return p
+        }
+
+        val roadBorder = Color(0xFFBBC8D4)
+        val roadFill   = Color(0xFFFFFFFF)
+
+        // Main spine: right/bottom cluster up through central corridor to upper-left
+        val spinePath = buildRoadPath(
+            listOf("COR_W", "SKY_W", "SKY_E", "SEC_D18", "COR_C", "COR_E", "SEC_D30")
+        )
+        drawPath(spinePath, roadBorder, style = Stroke(28f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(spinePath, roadFill,   style = Stroke(18f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+        // Top loop: upper left (D29) curving right to D40
+        val topPath = buildRoadPath(
+            listOf("SEC_D30", "D29", "D31", "D33", "D34", "D36", "D37", "D38", "D39", "D40")
+        )
+        drawPath(topPath, roadBorder, style = Stroke(28f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(topPath, roadFill,   style = Stroke(18f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+        // ── Gate markers — orange boxes matching the real map's gate label style ─
+        val gateIds = NAV_IMAGE_COORDS.keys.filter { it.matches(Regex("D\\d+")) }
+        val labelSizePx = (ch * 0.062f).coerceIn(16f, 34f)
+        drawIntoCanvas { canvas ->
+            val boxPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                style = android.graphics.Paint.Style.FILL
+                color = android.graphics.Color.argb(255, 220, 95, 20)  // DFW orange
+            }
+            val textPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                textAlign = android.graphics.Paint.Align.CENTER
+                textSize = labelSizePx
+                color = android.graphics.Color.WHITE
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            for (id in gateIds) {
+                val c = NAV_IMAGE_COORDS[id] ?: continue
+                if (!inView(c.first, c.second)) continue
+                val pt = toCanvas(c.first, c.second)
+                val tw = textPaint.measureText(id)
+                val boxW = tw + 10f
+                val boxH = labelSizePx * 1.35f
+                val boxL = pt.x - boxW / 2f
+                val boxTop = pt.y - boxH / 2f
+                canvas.nativeCanvas.drawRoundRect(
+                    android.graphics.RectF(boxL, boxTop, boxL + boxW, boxTop + boxH),
+                    4f, 4f, boxPaint
+                )
+                canvas.nativeCanvas.drawText(id, pt.x, pt.y + labelSizePx * 0.38f, textPaint)
+            }
+        }
+
+        // ── Completed segment (gray) ──────────────────────────────────────────
         if (currentNodeIndex > 0) {
             val donePath = Path().apply {
-                moveTo(nodeX(pathNodes[0].x), nodeY(pathNodes[0].y))
+                val s = toCanvas(imgCoords[0].first, imgCoords[0].second)
+                moveTo(s.x, s.y)
                 for (i in 1..currentNodeIndex) {
-                    lineTo(nodeX(pathNodes[i].x), nodeY(pathNodes[i].y))
+                    val p = toCanvas(imgCoords[i].first, imgCoords[i].second)
+                    lineTo(p.x, p.y)
                 }
             }
-            drawPath(donePath, Color(0xFF9E9E9E),
-                style = Stroke(width = 9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(donePath, Color(0xBB9E9E9E),
+                style = Stroke(8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
 
-        // ── Remaining segment: currentNodeIndex → destination (animated blue) ─
+        // ── Ahead segment (animated blue glow + dashes) ───────────────────────
         val aheadPath = Path().apply {
-            moveTo(nodeX(pathNodes[currentNodeIndex].x), nodeY(pathNodes[currentNodeIndex].y))
-            for (i in currentNodeIndex + 1 until pathNodes.size) {
-                lineTo(nodeX(pathNodes[i].x), nodeY(pathNodes[i].y))
+            val s = toCanvas(imgCoords[currentNodeIndex].first, imgCoords[currentNodeIndex].second)
+            moveTo(s.x, s.y)
+            for (i in currentNodeIndex + 1 until imgCoords.size) {
+                val p = toCanvas(imgCoords[i].first, imgCoords[i].second)
+                lineTo(p.x, p.y)
             }
         }
-        // Glow shadow
-        drawPath(aheadPath, Color(0x601A73E8),
-            style = Stroke(width = 14f, cap = StrokeCap.Round))
-        // Solid blue fill
+        drawPath(aheadPath, Color(0x601A73E8), style = Stroke(16f, cap = StrokeCap.Round))
         drawPath(aheadPath, Color(0xFF1A73E8),
-            style = Stroke(width = 9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-        // White dashes flowing toward destination
+            style = Stroke(9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(aheadPath, Color(0xCCFFFFFF),
-            style = Stroke(width = 9f, cap = StrokeCap.Round, join = StrokeJoin.Round,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 18f), dashPhase)))
+            style = Stroke(9f, cap = StrokeCap.Round, join = StrokeJoin.Round,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(18f, 16f), dashPhase)))
 
-        // ── Gate labels along the path ────────────────────────────────────────
-        val gateLabelPx = h * 0.085f
+        // ── "You" marker ──────────────────────────────────────────────────────
+        val curPt = toCanvas(imgCoords[currentNodeIndex].first, imgCoords[currentNodeIndex].second)
+        drawCircle(Color(0x501A73E8), 22f, curPt)
+        drawCircle(Color(0xFF1A73E8), 13f, curPt)
+        drawCircle(Color.White, 6f, curPt)
+        val youTextPx = ch * 0.075f
         drawIntoCanvas { canvas ->
-            val labelPaint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                textAlign   = android.graphics.Paint.Align.CENTER
-                textSize    = gateLabelPx
-                isFakeBoldText = true
-                color       = android.graphics.Color.argb(190, 40, 40, 40)
+            val textPaint = android.graphics.Paint().apply {
+                isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER
+                textSize = youTextPx; isFakeBoldText = true
+                color = android.graphics.Color.argb(255, 26, 115, 232)
             }
             val bgPaint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                color       = android.graphics.Color.argb(190, 255, 255, 255)
-                style       = android.graphics.Paint.Style.FILL
+                isAntiAlias = true; style = android.graphics.Paint.Style.FILL
+                color = android.graphics.Color.argb(220, 255, 255, 255)
             }
-            var lastLabelX = -999f
-            pathNodes.forEachIndexed { idx, node ->
-                val gateNum = node.id.removePrefix("D").toIntOrNull() ?: return@forEachIndexed
-                val cx = nodeX(node.x)
-                // Suppress labels too close together horizontally
-                if (kotlin.math.abs(cx - lastLabelX) < bW * 0.10f) return@forEachIndexed
-                lastLabelX = cx
-                val cy = nodeY(node.y)
-                // Top arm → label below node; bottom arm → label above node
-                val isTopArm = node.y < 0.45f
-                val labelY = if (isTopArm) cy + gateLabelPx * 1.5f else cy - gateLabelPx * 0.4f
-                val tw = labelPaint.measureText(node.id)
-                val pill = android.graphics.RectF(
-                    cx - tw / 2f - 5f, labelY - gateLabelPx * 0.9f,
-                    cx + tw / 2f + 5f, labelY + gateLabelPx * 0.15f
-                )
-                canvas.nativeCanvas.drawRoundRect(pill, 5f, 5f, bgPaint)
-                canvas.nativeCanvas.drawText(node.id, cx, labelY, labelPaint)
-            }
-        }
-
-        // ── "You are here" marker at current position ─────────────────────────
-        val curNode = pathNodes[currentNodeIndex]
-        val curX    = nodeX(curNode.x)
-        val curY    = nodeY(curNode.y)
-        drawCircle(Color(0x501A73E8), radius = 22f, center = Offset(curX, curY))
-        drawCircle(Color(0xFF1A73E8), radius = 13f, center = Offset(curX, curY))
-        drawCircle(Color.White,       radius =  6f, center = Offset(curX, curY))
-
-        val youLabelPx = h * 0.10f
-        drawIntoCanvas { canvas ->
-            val paint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                textAlign   = android.graphics.Paint.Align.CENTER
-                textSize    = youLabelPx
-                isFakeBoldText = true
-                color       = android.graphics.Color.argb(255, 26, 115, 232)
-            }
-            val bgPaint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                color       = android.graphics.Color.argb(230, 255, 255, 255)
-                style       = android.graphics.Paint.Style.FILL
-            }
-            val isTopArm = curNode.y < 0.45f
-            val labelY = if (isTopArm) curY - 26f else curY + 26f + youLabelPx
-            val tw = paint.measureText("You")
-            val pill = android.graphics.RectF(
-                curX - tw / 2f - 7f, labelY - youLabelPx * 0.9f,
-                curX + tw / 2f + 7f, labelY + youLabelPx * 0.15f
-            )
-            canvas.nativeCanvas.drawRoundRect(pill, 6f, 6f, bgPaint)
-            canvas.nativeCanvas.drawText("You", curX, labelY, paint)
+            val labelY = curPt.y - 30f
+            val tw = textPaint.measureText("You")
+            canvas.nativeCanvas.drawRoundRect(
+                android.graphics.RectF(curPt.x - tw/2f - 6f, labelY - youTextPx * 0.9f,
+                    curPt.x + tw/2f + 6f, labelY + youTextPx * 0.2f), 5f, 5f, bgPaint)
+            canvas.nativeCanvas.drawText("You", curPt.x, labelY, textPaint)
         }
 
         // ── Destination marker ────────────────────────────────────────────────
-        val destNode  = pathNodes.last()
-        val destX     = nodeX(destNode.x)
-        val destY     = nodeY(destNode.y)
+        val destPt = toCanvas(imgCoords.last().first, imgCoords.last().second)
         val destColor = when (destinationAmenity.status) {
             AmenityStatus.OPEN           -> Color(0xFF2E7D32)
             AmenityStatus.CLOSED         -> Color(0xFFC62828)
             AmenityStatus.OUT_OF_SERVICE -> Color(0xFFE65100)
             AmenityStatus.UNKNOWN        -> Color(0xFF757575)
         }
-        drawCircle(Color(0x50000000), radius = 16f, center = Offset(destX + 3f, destY + 3f))
-        drawCircle(destColor, radius = 15f, center = Offset(destX, destY))
-        drawCircle(Color.White, radius = 15f, center = Offset(destX, destY), style = Stroke(3.5f))
-        drawCircle(Color.White, radius =  6f, center = Offset(destX, destY))
-
+        val destAndroidColor = when (destinationAmenity.status) {
+            AmenityStatus.OPEN           -> android.graphics.Color.argb(255, 27,  94,  32)
+            AmenityStatus.CLOSED         -> android.graphics.Color.argb(255, 183, 28,  28)
+            AmenityStatus.OUT_OF_SERVICE -> android.graphics.Color.argb(255, 191, 54,  12)
+            AmenityStatus.UNKNOWN        -> android.graphics.Color.argb(255, 66,  66,  66)
+        }
         val destLabel = when (destinationAmenity.type) {
             AmenityType.RESTROOM                -> "Restroom"
             AmenityType.FAMILY_RESTROOM         -> "Family"
             AmenityType.LACTATION_ROOM          -> "Lactation"
-            AmenityType.GENDER_NEUTRAL_RESTROOM -> "Gender-Neutral"
+            AmenityType.GENDER_NEUTRAL_RESTROOM -> "GN Restroom"
             AmenityType.WATER_FOUNTAIN          -> "Fountain"
         }
-        val destLabelPx = h * 0.10f
-        val destAndroidColor = when (destinationAmenity.status) {
-            AmenityStatus.OPEN           -> android.graphics.Color.argb(255, 27, 94, 32)
-            AmenityStatus.CLOSED         -> android.graphics.Color.argb(255, 183, 28, 28)
-            AmenityStatus.OUT_OF_SERVICE -> android.graphics.Color.argb(255, 191, 54, 12)
-            AmenityStatus.UNKNOWN        -> android.graphics.Color.argb(255, 66, 66, 66)
-        }
+        drawCircle(Color(0x50000000), 16f, Offset(destPt.x + 2f, destPt.y + 2f))
+        drawCircle(destColor, 15f, destPt)
+        drawCircle(Color.White, 15f, destPt, style = Stroke(3f))
+        drawCircle(Color.White, 6f, destPt)
+        val destTextPx = ch * 0.075f
         drawIntoCanvas { canvas ->
-            val paint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                textAlign   = android.graphics.Paint.Align.CENTER
-                textSize    = destLabelPx
-                isFakeBoldText = true
-                color       = destAndroidColor
+            val textPaint = android.graphics.Paint().apply {
+                isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER
+                textSize = destTextPx; isFakeBoldText = true; color = destAndroidColor
             }
             val bgPaint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                color       = android.graphics.Color.argb(230, 255, 255, 255)
-                style       = android.graphics.Paint.Style.FILL
+                isAntiAlias = true; style = android.graphics.Paint.Style.FILL
+                color = android.graphics.Color.argb(220, 255, 255, 255)
             }
-            val isTopArm = destNode.y < 0.45f
-            val labelY = if (isTopArm) destY - 22f else destY + 22f + destLabelPx
-            val tw = paint.measureText(destLabel)
-            val pill = android.graphics.RectF(
-                destX - tw / 2f - 7f, labelY - destLabelPx * 0.9f,
-                destX + tw / 2f + 7f, labelY + destLabelPx * 0.15f
-            )
-            canvas.nativeCanvas.drawRoundRect(pill, 6f, 6f, bgPaint)
-            canvas.nativeCanvas.drawText(destLabel, destX, labelY, paint)
+            val labelY = destPt.y + 24f + destTextPx
+            val tw = textPaint.measureText(destLabel)
+            canvas.nativeCanvas.drawRoundRect(
+                android.graphics.RectF(destPt.x - tw/2f - 6f, labelY - destTextPx * 0.9f,
+                    destPt.x + tw/2f + 6f, labelY + destTextPx * 0.2f), 5f, 5f, bgPaint)
+            canvas.nativeCanvas.drawText(destLabel, destPt.x, labelY, textPaint)
         }
     }
 }

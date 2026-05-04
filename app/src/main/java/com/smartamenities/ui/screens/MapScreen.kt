@@ -1,11 +1,17 @@
 package com.smartamenities.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -45,7 +51,9 @@ import com.smartamenities.ui.components.AccountIconButton
 import com.smartamenities.ui.theme.*
 import com.smartamenities.viewmodel.AmenityUiState
 import com.smartamenities.viewmodel.AmenityViewModel
+import com.smartamenities.R
 import kotlin.math.sqrt
+
 
 // ── Private types ─────────────────────────────────────────────────────────────
 
@@ -62,11 +70,11 @@ private data class StaticLocation(
     val id: String,
     val gate: String,
     val type: AmenityType,
-    /** true = top wall (D5–D22), false = bottom wall (D23–D40) */
-    val topWall: Boolean,
     val floor: TerminalFloor,
-    val xNudge: Float = 0f,
-    val yNudge: Float = 0f
+    /** Fraction 0–1 of image width (431 px wide) */
+    val x: Float,
+    /** Fraction 0–1 of image height (793 px tall) */
+    val y: Float
 )
 
 /**
@@ -107,39 +115,32 @@ private enum class TerminalFloor(val label: String, val description: String) {
 //                        passengers use after clearing security.
 //   Level 4 (Mezzanine)– lactation room and the restroom cluster at the D22 mezzanine end.
 
+// Coordinates calibrated to the 431×793 terminal_d.png asset.
+// x=0 is the left edge, x=1 the right edge; y=0 is top, y=1 bottom.
 private val STATIC_LOCATIONS: List<StaticLocation> = listOf(
-    // ── Level 3 · Gates (main gate floor, most amenities) ────────────────────
-    StaticLocation("pin_rest_d6",  "D6",  AmenityType.RESTROOM,        topWall = true,  floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d10", "D10", AmenityType.RESTROOM,        topWall = true,  floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d17", "D17", AmenityType.RESTROOM,        topWall = true,  floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d20", "D20", AmenityType.RESTROOM,        topWall = true,  floor = TerminalFloor.GATES),
-    StaticLocation("pin_fam_d18",  "D18", AmenityType.FAMILY_RESTROOM, topWall = true,  floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d24", "D24", AmenityType.RESTROOM,        topWall = false, floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d27", "D27", AmenityType.RESTROOM,        topWall = false, floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d29", "D29", AmenityType.RESTROOM,        topWall = false, floor = TerminalFloor.GATES),
-    StaticLocation("pin_rest_d36", "D36", AmenityType.RESTROOM,        topWall = false, floor = TerminalFloor.GATES),
-    StaticLocation("pin_fam_d25",  "D25", AmenityType.FAMILY_RESTROOM, topWall = false, floor = TerminalFloor.GATES),
-    StaticLocation("pin_fam_d28",  "D28", AmenityType.FAMILY_RESTROOM, topWall = false, floor = TerminalFloor.GATES),
+    // ── Level 3 · Gates ──────────────────────────────────────────────────────
+    // y calibration (from user feedback):
+    //   D22≈0.54, D23≈0.43, D24≈0.34 (10-pt spacing); D24→D29 compressed ~4-pt/gate.
+    //   D20≈0.77; D18 is below D20 so moves to ≈0.84.
+    StaticLocation("pin_rest_d10", "D10", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.68f, 0.93f),
+    StaticLocation("pin_rest_d17", "D17", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.74f, 0.87f),
+    StaticLocation("pin_fam_d18",  "D18", AmenityType.FAMILY_RESTROOM, TerminalFloor.GATES,     0.24f, 0.84f),
+    StaticLocation("pin_rest_d20", "D20", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.27f, 0.71f),
+    StaticLocation("pin_rest_d24", "D24", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.22f, 0.36f),
+    StaticLocation("pin_fam_d25",  "D25", AmenityType.FAMILY_RESTROOM, TerminalFloor.GATES,     0.22f, 0.30f),
+    StaticLocation("pin_rest_d27", "D27", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.22f, 0.22f),
+    StaticLocation("pin_fam_d28",  "D28", AmenityType.FAMILY_RESTROOM, TerminalFloor.GATES,     0.35f, 0.18f),
+    StaticLocation("pin_rest_d29", "D29", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.22f, 0.14f),
+    StaticLocation("pin_rest_d36", "D36", AmenityType.RESTROOM,        TerminalFloor.GATES,     0.75f, 0.06f),
 
-    // ── Level 1 · Arrivals (customs exit area near D22, far end near D40) ───
-    StaticLocation("pin_rest_d22_arr", "D22", AmenityType.RESTROOM,   topWall = true,  floor = TerminalFloor.ARRIVALS),
-    StaticLocation("pin_rest_d40",     "D40", AmenityType.RESTROOM,   topWall = false, floor = TerminalFloor.ARRIVALS),
+    // ── Level 1 · Arrivals ───────────────────────────────────────────────────
+    StaticLocation("pin_rest_d22_arr", "D22", AmenityType.RESTROOM, TerminalFloor.ARRIVALS, 0.27f, 0.63f),
+    StaticLocation("pin_rest_d40",     "D40", AmenityType.RESTROOM, TerminalFloor.ARRIVALS, 0.90f, 0.03f),
 
-    // ── Level 4 · Mezzanine (upper concourse, quieter amenities) ─────────────
-    StaticLocation("pin_rest_d22_mez", "D22", AmenityType.RESTROOM,      topWall = true,  floor = TerminalFloor.MEZZANINE,
-        xNudge = 0.02f),
-    StaticLocation("pin_lac_d22",      "D22", AmenityType.LACTATION_ROOM, topWall = true,  floor = TerminalFloor.MEZZANINE,
-        xNudge = -0.025f, yNudge = 0.07f),
+    // ── Level 4 · Mezzanine ──────────────────────────────────────────────────
+    StaticLocation("pin_rest_d22_mez", "D22", AmenityType.RESTROOM,      TerminalFloor.MEZZANINE, 0.30f, 0.63f),
+    StaticLocation("pin_lac_d22",      "D22", AmenityType.LACTATION_ROOM, TerminalFloor.MEZZANINE, 0.24f, 0.66f),
 )
-
-private fun gateToXFraction(gate: String): Float {
-    val num = gate.removePrefix("D").toIntOrNull() ?: return 0.5f
-    return when {
-        num in 5..22  -> (num - 5).toFloat() / 17f
-        num in 23..40 -> 1f - (num - 23).toFloat() / 17f
-        else          -> 0.5f
-    }
-}
 
 // ── Public screen composable ──────────────────────────────────────────────────
 
@@ -319,6 +320,7 @@ private fun MapTab(
             )
         }
 
+        // Map fills remaining space; PinInfoCard overlays at bottom outside the scroll.
         Box(modifier = Modifier.weight(1f)) {
             TerminalDFloorPlan(
                 liveAmenities = liveAmenities,
@@ -339,6 +341,7 @@ private fun MapTab(
                 )
             }
         }
+
     }
 }
 
@@ -488,6 +491,10 @@ private fun AmenityListCard(amenity: Amenity, onClick: () -> Unit) {
 
 // ── Floor-plan canvas ─────────────────────────────────────────────────────────
 
+// terminal_d.png dimensions: 431 × 793 px
+private const val MAP_ASPECT_W = 431f
+private const val MAP_ASPECT_H = 793f
+
 @Composable
 private fun TerminalDFloorPlan(
     liveAmenities: List<Amenity>,
@@ -497,78 +504,103 @@ private fun TerminalDFloorPlan(
     modifier:      Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val pinTextPx = with(density) { 7.sp.toPx() }
+    val pinTextPx   = with(density) { 11.sp.toPx() }
+    val hitRadiusPx = with(density) { 36.dp.toPx() }
 
-    // All pins for every floor; filter to the selected floor for display
+    // Pulsing halo — rings expand and fade outward from every pin.
+    val pulse = rememberInfiniteTransition(label = "pinPulse")
+    val pulseScale by pulse.animateFloat(
+        initialValue = 1.0f, targetValue = 2.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ), label = "pulseScale"
+    )
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.55f, targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ), label = "pulseAlpha"
+    )
+
     val allPins = remember(liveAmenities) { buildPins(liveAmenities) }
     val pins = remember(allPins, selectedFloor) { allPins.filter { it.floor == selectedFloor } }
     val showYouAreHere = selectedFloor == TerminalFloor.ARRIVALS
 
-    val mapWidth = 920.dp
     val scrollState = rememberScrollState()
 
-    Box(
-        modifier = modifier
-            .background(Color(0xFFEAEAE6))
-            .horizontalScroll(scrollState)
+    // Outer Box receives fillMaxSize from MapTab; the Column scrolls its content vertically.
+    Column(
+        modifier = modifier.verticalScroll(scrollState)
     ) {
-        Box(
-            modifier = Modifier
-                .width(mapWidth)
-                .fillMaxHeight()
-                .background(Color(0xFFF5F5F0))
-        ) {
-            // TODO: Load terminal_d.png from drawable resources
-            // Image(
-            //     painter = painterResource(id = R.drawable.terminal_d),
-            //     contentDescription = "Terminal D floor plan",
-            //     contentScale = ContentScale.Crop,
-            //     modifier = Modifier.matchParentSize()
-            // )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            // Compute map height to preserve the image's aspect ratio.
+            val mapHeight = maxWidth * (MAP_ASPECT_H / MAP_ASPECT_W)
 
-            Canvas(
+            Box(
                 modifier = Modifier
-                    .matchParentSize()
-                    .pointerInput(pins) {
-                        detectTapGestures { offset ->
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            val bL = w * 0.01f
-                            val bW = w * 0.98f
-                            val hit = pins.firstOrNull { pin ->
-                                val px = bL + pin.xFraction * bW
-                                val py = pin.yFraction * h
-                                sqrt((offset.x - px) * (offset.x - px) +
-                                     (offset.y - py) * (offset.y - py)) < 42f
-                            }
-                            hit?.let { onPinTapped(it) }
-                        }
-                    }
+                    .fillMaxWidth()
+                    .height(mapHeight)
             ) {
-                val w = size.width
-                val h = size.height
-                val bL = w * 0.01f
-                val bW = w * 0.98f
-                val corrMidY = h * 0.5f
+                Image(
+                    painter          = painterResource(id = R.drawable.terminal_d),
+                    contentDescription = "Terminal D floor plan",
+                    contentScale     = ContentScale.FillBounds,
+                    modifier         = Modifier.fillMaxSize()
+                )
 
-                // Optional translucent overlay so pins remain readable over a detailed base map
-                drawRect(Color(0x33FFFFFF), topLeft = Offset(0f, 0f), size = Size(w, h))
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(pins) {
+                            detectTapGestures { offset ->
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                val hit = pins.firstOrNull { pin ->
+                                    val px = pin.xFraction * w
+                                    val py = pin.yFraction * h
+                                    sqrt((offset.x - px) * (offset.x - px) +
+                                         (offset.y - py) * (offset.y - py)) < hitRadiusPx
+                                }
+                                hit?.let { onPinTapped(it) }
+                            }
+                        }
+                ) {
+                    val w = size.width
+                    val h = size.height
 
-                if (showYouAreHere) {
-                    val youX = bL + bW - w * 0.035f
-                    val youY = corrMidY
-                    drawCircle(Color(0x330052A5), 24f, Offset(youX, youY))
-                    drawCircle(Color(0xFF0052A5), 13f, Offset(youX, youY))
-                    drawCircle(Color.White, 6f, Offset(youX, youY))
-                    drawZoneLabel("You are here", youX, youY + 28f, 6.5f.sp.toPx(),
-                        android.graphics.Color.argb(255, 0, 82, 165))
-                }
+                    // Slight overlay keeps pin labels readable over the detailed map.
+                    drawRect(Color(0x1AFFFFFF), topLeft = Offset.Zero, size = Size(w, h))
 
-                pins.forEach { pin ->
-                    val px = bL + pin.xFraction * bW
-                    val py = pin.yFraction * h
-                    drawAmenityPin(pin.amenity, px, py,
-                        isSelected = activePin?.amenity?.id == pin.amenity.id, pinTextPx)
+                    if (showYouAreHere) {
+                        // Customs-exit area is in the mid-terminal near D22.
+                        val youX = w * 0.38f
+                        val youY = h * 0.60f
+                        drawCircle(Color(0x330052A5), 28f, Offset(youX, youY))
+                        drawCircle(Color(0xFF0052A5), 14f, Offset(youX, youY))
+                        drawCircle(Color.White, 6f, Offset(youX, youY))
+                        drawZoneLabel(
+                            text      = "You are here",
+                            cx        = youX,
+                            cy        = youY + 30f,
+                            textSizePx = with(density) { 7.sp.toPx() },
+                            argbColor = android.graphics.Color.argb(255, 0, 82, 165)
+                        )
+                    }
+
+                    pins.forEach { pin ->
+                        val px = pin.xFraction * w
+                        val py = pin.yFraction * h
+                        drawAmenityPin(
+                            amenity    = pin.amenity,
+                            px         = px, py = py,
+                            isSelected = activePin?.amenity?.id == pin.amenity.id,
+                            textSizePx = pinTextPx,
+                            pulseScale = pulseScale,
+                            pulseAlpha = pulseAlpha
+                        )
+                    }
                 }
             }
         }
@@ -576,50 +608,6 @@ private fun TerminalDFloorPlan(
 }
 
 // ── DrawScope helpers ─────────────────────────────────────────────────────────
-
-// Draw gate label centred inside the gate stub box
-private fun DrawScope.drawGateLabelInStub(label: String, cx: Float, cy: Float, textSizePx: Float) {
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(255, 21, 101, 192)  // #1565C0 DFW blue
-            textSize = textSizePx
-            textAlign = android.graphics.Paint.Align.CENTER
-            isFakeBoldText = true
-            isAntiAlias = true
-        }
-        canvas.nativeCanvas.drawText(label, cx, cy, paint)
-    }
-}
-
-private fun DrawScope.drawSkylink(
-    x: Float, y: Float, w: Float, h: Float,
-    labelX: Float, labelY: Float, textSizePx: Float
-) {
-    drawRect(Color(0xFFFFF3E0), topLeft = Offset(x, y), size = Size(w, h))
-    drawRect(Color(0xFFFFB300), topLeft = Offset(x, y), size = Size(w, h), style = Stroke(2f))
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(255, 230, 81, 0)
-            textSize = textSizePx; textAlign = android.graphics.Paint.Align.CENTER
-            isFakeBoldText = true; isAntiAlias = true
-        }
-        canvas.nativeCanvas.drawText("SKYLINK", labelX, labelY, paint)
-    }
-}
-
-private fun DrawScope.drawSecurityMarker(cx: Float, cy: Float, radius: Float, textSizePx: Float) {
-    drawCircle(Color(0xFFFFCDD2), radius, Offset(cx, cy))
-    drawCircle(Color(0xFFC62828), radius, Offset(cx, cy), style = Stroke(2f))
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(255, 198, 40, 40)
-            textSize = textSizePx; textAlign = android.graphics.Paint.Align.CENTER
-            isFakeBoldText = true; isAntiAlias = true
-        }
-        canvas.nativeCanvas.drawText("SEC", cx, cy + 3f, paint)
-        canvas.nativeCanvas.drawText("Security", cx, cy + radius + 13f, paint)
-    }
-}
 
 private fun DrawScope.drawZoneLabel(
     text: String, cx: Float, cy: Float, textSizePx: Float, argbColor: Int
@@ -635,7 +623,8 @@ private fun DrawScope.drawZoneLabel(
 }
 
 private fun DrawScope.drawAmenityPin(
-    amenity: Amenity, px: Float, py: Float, isSelected: Boolean, textSizePx: Float
+    amenity: Amenity, px: Float, py: Float, isSelected: Boolean, textSizePx: Float,
+    pulseScale: Float = 1f, pulseAlpha: Float = 0f
 ) {
     val statusColor = when (amenity.status) {
         AmenityStatus.OPEN           -> Color(0xFF2E7D32)
@@ -650,11 +639,17 @@ private fun DrawScope.drawAmenityPin(
         CrowdLevel.LONG    -> Color(0xFFC62828)
         CrowdLevel.UNKNOWN -> Color(0xFF757575)
     }
-    val pinR = if (isSelected) 16f else 12f
+    val pinR = if (isSelected) 28f else 22f
+
+    // Pulsing halo ring — expands and fades outward (drawn behind everything)
+    if (pulseAlpha > 0f) {
+        drawCircle(statusColor.copy(alpha = pulseAlpha), pinR * pulseScale, Offset(px, py))
+    }
+
     val tipY = py + pinR * 1.5f  // tip of teardrop points down from head center
 
     // Drop shadow under the head
-    drawCircle(Color(0x40000000), pinR + 2f, Offset(px + 2f, py + 2f))
+    drawCircle(Color(0x40000000), pinR + 3f, Offset(px + 3f, py + 3f))
 
     // Teardrop triangle (tip pointing down)
     val tipPath = Path().apply {
@@ -672,8 +667,8 @@ private fun DrawScope.drawAmenityPin(
 
     // Crowd dot (top-right of head)
     val dotOff = pinR * 0.72f
-    drawCircle(crowdColor, 4.5f, Offset(px + dotOff, py - dotOff))
-    drawCircle(Color.White, 4.5f, Offset(px + dotOff, py - dotOff), style = Stroke(1f))
+    drawCircle(crowdColor, 6.5f, Offset(px + dotOff, py - dotOff))
+    drawCircle(Color.White, 6.5f, Offset(px + dotOff, py - dotOff), style = Stroke(1.5f))
 
     val label = when (amenity.type) {
         AmenityType.RESTROOM                -> "WC"
@@ -692,52 +687,10 @@ private fun DrawScope.drawAmenityPin(
     }
 }
 
-// ── Walking lane line (dashed centerline in each concourse arm) ──────────
-
-private fun DrawScope.drawLaneLine(x1: Float, y1: Float, x2: Float, y2: Float) {
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(55, 100, 130, 200)
-            style = android.graphics.Paint.Style.STROKE
-            strokeWidth = 2f
-            pathEffect = android.graphics.DashPathEffect(floatArrayOf(18f, 12f), 0f)
-            strokeCap = android.graphics.Paint.Cap.ROUND
-            isAntiAlias = true
-        }
-        canvas.nativeCanvas.drawLine(x1, y1, x2, y2, paint)
-    }
-}
-
-// ── Taxiway lines (bottom of canvas, airport context) ────────────────────────
-
-private fun DrawScope.drawTaxiwayLines(w: Float, h: Float) {
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(100, 158, 158, 158)
-            style = android.graphics.Paint.Style.STROKE
-            strokeWidth = 3f
-            strokeCap = android.graphics.Paint.Cap.ROUND
-            isAntiAlias = true
-        }
-        val path1 = android.graphics.Path().apply {
-            moveTo(w * 0.05f, h * 0.975f)
-            cubicTo(w * 0.25f, h * 0.935f, w * 0.75f, h * 0.935f, w * 0.95f, h * 0.975f)
-        }
-        canvas.nativeCanvas.drawPath(path1, paint)
-        val path2 = android.graphics.Path().apply {
-            moveTo(w * 0.10f, h * 0.998f)
-            cubicTo(w * 0.30f, h * 0.958f, w * 0.70f, h * 0.958f, w * 0.90f, h * 0.998f)
-        }
-        canvas.nativeCanvas.drawPath(path2, paint)
-    }
-}
-
 // ── Pin builder ───────────────────────────────────────────────────────────────
 
 private fun buildPins(liveAmenities: List<Amenity>): List<MapPin> =
     STATIC_LOCATIONS.map { loc ->
-        val xBase = gateToXFraction(loc.gate)
-        val yBase = if (loc.topWall) 0.23f else 0.77f
         val match = liveAmenities.firstOrNull { a ->
             a.type == loc.type && a.gateProximity.contains(loc.gate)
         }
@@ -751,8 +704,8 @@ private fun buildPins(liveAmenities: List<Amenity>): List<MapPin> =
             name                   = "${loc.type.displayName} near ${loc.gate}",
             type                   = loc.type,
             floor                  = floorNumber,
-            locationX              = xBase + loc.xNudge,
-            locationY              = yBase + loc.yNudge,
+            locationX              = loc.x,
+            locationY              = loc.y,
             status                 = AmenityStatus.OPEN,
             crowdLevel             = CrowdLevel.SHORT,
             estimatedWalkMinutes   = 3,
@@ -764,7 +717,7 @@ private fun buildPins(liveAmenities: List<Amenity>): List<MapPin> =
             confidenceScore        = 0.9f,
             gateProximity          = "Near Gate ${loc.gate}"
         )
-        MapPin(amenity, xBase + loc.xNudge, yBase + loc.yNudge, floor = loc.floor)
+        MapPin(amenity, loc.x, loc.y, floor = loc.floor)
     }
 
 // ── Pin info card overlay ─────────────────────────────────────────────────────
