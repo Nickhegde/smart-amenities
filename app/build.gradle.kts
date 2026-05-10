@@ -74,4 +74,10 @@ dependencies {
 
     // Coroutines
     implementation(libs.coroutines.android)
+
+    // Local Unit Testing
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.coroutines.test)
 }
