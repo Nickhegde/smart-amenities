@@ -5,27 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.smartamenities.data.model.*
 import com.smartamenities.data.repository.AmenityRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * NavigationViewModel — owns the UI state for NavigationScreen
- *
- * Responsibilities (from HLA doc):
- *  - observeRoute()      : provides turn-by-turn steps to the UI
- *  - triggerReroute()    : requests a new route when disruption detected
- *  - observeClosure()    : watches for corridor/amenity closures
- *
- * The navigation loop (loop [whileNavigating] in the Sequence Diagram) is
- * modelled by the currentStepIndex advancing through the Route's steps list.
- */
 @HiltViewModel
 class NavigationViewModel @Inject constructor(
     private val repository: AmenityRepository
 ) : ViewModel() {
-
-    // ── UI state ──────────────────────────────────────────────────────────────
 
     private val _navState = MutableStateFlow<NavigationUiState>(NavigationUiState.Idle)
     val navState: StateFlow<NavigationUiState> = _navState.asStateFlow()
@@ -33,22 +22,23 @@ class NavigationViewModel @Inject constructor(
     private val _currentStepIndex = MutableStateFlow(0)
     val currentStepIndex: StateFlow<Int> = _currentStepIndex.asStateFlow()
 
-    // The route currently being navigated
     private var activeRoute: Route? = null
     private var targetAmenity: Amenity? = null
+    private var activePreferences: UserPreferences = UserPreferences()
+    private var amenitiesJob: Job? = null
+    private var statusMonitorJob: Job? = null
 
-    // ── Navigation lifecycle ──────────────────────────────────────────────────
+    companion object {
+        private const val STATUS_POLL_MS = 5_000L
+    }
 
-    /**
-     * Called when the passenger taps "Navigate" on the AmenityDetailScreen.
-     * Corresponds to beginNavigation(selectedAmenity, accessibilityStatus) in Sequence Diagram.
-     */
     fun beginNavigation(amenity: Amenity, preferences: UserPreferences) {
+        statusMonitorJob?.cancel()
         targetAmenity = amenity
+        activePreferences = preferences
         viewModelScope.launch {
             _navState.value = NavigationUiState.Loading
 
-            // Check amenity is still available before starting (FR 2.4)
             if (amenity.status == AmenityStatus.CLOSED ||
                 amenity.status == AmenityStatus.OUT_OF_SERVICE) {
                 _navState.value = NavigationUiState.AmenityUnavailable(amenity)
@@ -63,19 +53,16 @@ class NavigationViewModel @Inject constructor(
                 amenity = amenity,
                 currentStep = route.steps.first()
             )
+            startStatusMonitoring(amenity, preferences)
         }
     }
 
-    /**
-     * Called when the user confirms a step is complete.
-     * Corresponds to stepComplete(step) in the Sequence Diagram.
-     */
     fun completeStep() {
         val route = activeRoute ?: return
         val nextIndex = _currentStepIndex.value + 1
 
         if (nextIndex >= route.steps.size) {
-            // All steps done — navigation complete (FR 2.8)
+            statusMonitorJob?.cancel()
             _navState.value = NavigationUiState.Arrived(targetAmenity!!)
         } else {
             _currentStepIndex.value = nextIndex
@@ -87,11 +74,6 @@ class NavigationViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Called when a route disruption is detected — triggers reroute prompt (FR 2.5).
-     * In Iteration 1 this goes straight to rerouting; FR 2.5 user confirmation
-     * dialog is added in Iteration 2.
-     */
     fun triggerReroute(preferences: UserPreferences) {
         val amenity = targetAmenity ?: return
         viewModelScope.launch {
@@ -107,12 +89,56 @@ class NavigationViewModel @Inject constructor(
         }
     }
 
-    /** Called when the user taps the End Navigation button (FR 2.6) */
+    fun navigateToAlternative(alternative: Amenity) {
+        beginNavigation(alternative, activePreferences)
+    }
+
     fun endNavigation() {
+        statusMonitorJob?.cancel()
+        amenitiesJob?.cancel()
         activeRoute = null
         targetAmenity = null
         _currentStepIndex.value = 0
         _navState.value = NavigationUiState.Idle
+    }
+
+    // ── Status monitoring ─────────────────────────────────────────────────────
+
+    private fun startStatusMonitoring(amenity: Amenity, preferences: UserPreferences) {
+        statusMonitorJob?.cancel()
+        statusMonitorJob = viewModelScope.launch {
+            while (true) {
+                delay(STATUS_POLL_MS)
+                if (_navState.value !is NavigationUiState.Navigating) break
+
+                // Query the admin endpoint directly — it reads straight from the DB,
+                // bypassing the recommendation cache that AmenityViewModel also writes to.
+                // null means a transient network error; skip and retry next cycle.
+                val freshStatus = repository.getFreshAmenityStatus(amenity.id) ?: continue
+
+                val isClosed = freshStatus == AmenityStatus.CLOSED ||
+                               freshStatus == AmenityStatus.OUT_OF_SERVICE
+
+                if (isClosed) {
+                    // Move user node to current step so alternatives rank from the
+                    // passenger's actual position mid-navigation.
+                    activeRoute?.routeNodeIds?.getOrNull(_currentStepIndex.value)
+                        ?.let { node -> repository.setUserNode(node) }
+                    repository.clearCaches()
+
+                    val alternatives = try {
+                        repository.getAmenitiesByType(amenity.type, preferences).first()
+                            .filter { it.id != amenity.id && it.status == AmenityStatus.OPEN }
+                    } catch (_: Exception) { emptyList() }
+
+                    _navState.value = NavigationUiState.ClosureRerouting(
+                        closedAmenity = amenity.copy(status = freshStatus),
+                        alternative = alternatives.firstOrNull()
+                    )
+                    break
+                }
+            }
+        }
     }
 }
 
@@ -131,4 +157,10 @@ sealed class NavigationUiState {
 
     data class AmenityUnavailable(val amenity: Amenity) : NavigationUiState()
     data class Arrived(val amenity: Amenity) : NavigationUiState()
+
+    /** Target amenity closed mid-navigation; [alternative] is the next nearest open one. */
+    data class ClosureRerouting(
+        val closedAmenity: Amenity,
+        val alternative: Amenity?
+    ) : NavigationUiState()
 }

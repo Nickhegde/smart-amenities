@@ -73,6 +73,27 @@ interface AmenityRepository {
      * Default no-op — only RemoteAmenityRepository overrides this.
      */
     fun setUserNode(node: String) {}
+
+    /**
+     * Emits the user location node whenever it changes (e.g. mid-navigation reroute).
+     * AmenityViewModel observes this to keep its _userNode display in sync.
+     * Default returns an empty flow — only RemoteAmenityRepository emits real values.
+     */
+    val userNodeUpdates: Flow<String> get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /**
+     * Returns the current status of a single amenity directly from the backend DB.
+     * Returns null on network error — callers should treat null as "retry next cycle".
+     * Default returns null (no-op for mock).
+     */
+    suspend fun getFreshAmenityStatus(amenityId: String): AmenityStatus? = null
+
+    /**
+     * Clears any in-memory recommendation caches so the next getAmenities() call
+     * goes to the network instead of returning stale data.
+     * Default no-op — only RemoteAmenityRepository has caches to clear.
+     */
+    fun clearCaches() {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

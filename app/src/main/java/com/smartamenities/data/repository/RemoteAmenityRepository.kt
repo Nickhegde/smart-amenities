@@ -25,8 +25,11 @@ import com.smartamenities.data.remote.RouteRecommendRequestDto
 import com.smartamenities.data.remote.AmenityOverrideRequestDto
 import com.smartamenities.data.remote.ScenarioApplyRequestDto
 import com.smartamenities.data.remote.ZoneControlRequestDto
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -53,6 +56,9 @@ class RemoteAmenityRepository @Inject constructor(
 
     // Current user location node — defaults to corridor center, overridable by admin.
     @Volatile private var userNode: String = DEFAULT_USER_NODE
+
+    private val _userNodeFlow = MutableStateFlow(DEFAULT_USER_NODE)
+    override val userNodeUpdates: Flow<String> = _userNodeFlow
 
     // Cached per-amenity recommendation from the last backend call.
     // Keyed by amenity_id so getRoute() can use the pre-computed path.
@@ -101,26 +107,33 @@ class RemoteAmenityRepository @Inject constructor(
     }
 
     override fun getAmenities(preferences: UserPreferences): Flow<List<Amenity>> = flow {
-        val type = effectiveAmenityType(preferences)
-
-        // Re-filter in memory if type hasn't changed — avoids API call for
-        // wheelchair / step-free toggles which are purely client-side.
-        val memCached = inMemoryAmenities[type.name]
-        if (memCached != null) {
-            Log.d(TAG, "Re-filtering ${memCached.size} in-memory amenities for ${type.name}")
-            emit(memCached.filter { matchesPreferences(it, preferences) })
-            return@flow
-        }
-
+        // "All" — fetch every amenity type, merge, and sort by total time (walk + wait).
         try {
-            val recommendations = fetchRecommendations(type, preferences)
-            emit(recommendations)
+            val allAmenities = mutableListOf<Amenity>()
+            for (type in AmenityType.values()) {
+                val cached = inMemoryAmenities[type.name]
+                if (cached != null) {
+                    Log.d(TAG, "Using in-memory cache for ${type.name} (${cached.size} items)")
+                    allAmenities.addAll(cached)
+                } else {
+                    fetchRecommendations(type, preferences)
+                    allAmenities.addAll(inMemoryAmenities[type.name] ?: emptyList())
+                }
+            }
+            val result = allAmenities
+                .filter { matchesPreferences(it, preferences) }
+                .sortedBy { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes }
+            emit(result)
         } catch (e: Exception) {
             Log.e(TAG, "getAmenities failed, trying Room cache: ${e.message}")
-            val cached = dao.getByType(type.name)
+            val cached = AmenityType.values().flatMap { type ->
+                dao.getByType(type.name).map { it.toDomain() }
+            }
             if (cached.isNotEmpty()) {
-                Log.d(TAG, "Serving ${cached.size} Room-cached amenities for ${type.name}")
-                emit(cached.map { it.toDomain() }.filter { matchesPreferences(it, preferences) })
+                Log.d(TAG, "Serving ${cached.size} Room-cached amenities (all types)")
+                emit(cached
+                    .filter { matchesPreferences(it, preferences) }
+                    .sortedBy { it.estimatedWalkMinutes + it.crowdLevel.waitEstimateMinutes })
             } else {
                 Log.w(TAG, "Room cache empty, falling back to mock")
                 emitAll(mock.getAmenities(preferences))
@@ -170,6 +183,18 @@ class RemoteAmenityRepository @Inject constructor(
         }
     }
 
+    // ── Direct status check — bypasses cache, queries DB via admin endpoint ─────
+
+    override suspend fun getFreshAmenityStatus(amenityId: String): AmenityStatus? = try {
+        apiService.getAdminAmenities()
+            .find { it.id == amenityId }
+            ?.status
+            ?.let { str -> AmenityStatus.values().firstOrNull { it.displayName == str } }
+    } catch (e: Exception) {
+        Log.e(TAG, "getFreshAmenityStatus($amenityId) failed: ${e.message}")
+        null
+    }
+
     // ── Non-admin pass-throughs ──────────────────────────────────────────────
 
     override suspend fun getAmenityById(id: String): Amenity? = mock.getAmenityById(id)
@@ -184,8 +209,9 @@ class RemoteAmenityRepository @Inject constructor(
      * admin write operation completes (via adminRefreshTrigger).
      * Falls back to the mock if the backend is unreachable.
      */
-    override fun observeAdminSimulation(): Flow<AdminSimulationState> =
-        merge(flowOf(Unit), adminRefreshTrigger).map {
+    override fun observeAdminSimulation(): Flow<AdminSimulationState> {
+        val ticker = flow<Unit> { while (true) { delay(5_000L); emit(Unit) } }
+        return merge(flowOf(Unit), adminRefreshTrigger, ticker).map {
             try {
                 val dtos = apiService.getAdminAmenities()
                 val amenities = dtos.map { it.toDomain(baseAmenityMap) }
@@ -195,6 +221,7 @@ class RemoteAmenityRepository @Inject constructor(
                 AdminSimulationState()
             }
         }
+    }
 
     // ── Admin — single amenity override ─────────────────────────────────────
 
@@ -286,6 +313,7 @@ class RemoteAmenityRepository @Inject constructor(
         if (node == userNode) return
         Log.d(TAG, "User node changed: $userNode → $node")
         userNode = node
+        _userNodeFlow.value = node
         inMemoryAmenities.clear()
         recommendationCache.clear()
     }
@@ -340,6 +368,8 @@ class RemoteAmenityRepository @Inject constructor(
     }
 
     // ── Cache invalidation ───────────────────────────────────────────────────
+
+    override fun clearCaches() = invalidateCaches()
 
     /** Clear both in-memory caches after any admin write so the next passenger
      *  fetch picks up the updated state from the backend. */
