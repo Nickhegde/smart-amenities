@@ -16,6 +16,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+        setProperty("archivesBaseName", "SmartAmenities-v1.0")
     }
 
     buildTypes {
@@ -73,4 +74,10 @@ dependencies {
 
     // Coroutines
     implementation(libs.coroutines.android)
+
+    // Local Unit Testing
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.coroutines.test)
 }
